@@ -1,0 +1,23 @@
+#ifndef __LED_STRIP_WHITE_ANIM_H__
+#define __LED_STRIP_WHITE_ANIM_H__
+
+#include "typedef.h"
+
+#define __LED_STRIP_WHITE_GET_SOUND_TRIGGER__() get_sound_triggered_by_led_strip_white()
+
+
+uint16_t led_strip_white_anim_comet_1_whit_max_brightness(void); 
+uint16_t led_strip_white_anim_comet_4_with_max_brightness(void); 
+u16 led_strip_white_anim_chase_with_max_brightness(void);
+u16 led_strip_white_anim_half_flow_with_max_brightness(void);
+u16 led_strip_white_anim_single_flow_and_stack_with_max_brightness(void);
+u16 led_strip_white_anim_stack_flow_with_max_brightness(void);
+u16 led_strip_white_anim_stack_flow_plus_reverse_with_max_brightness(void);
+
+uint16_t led_strip_white_anim_sound_control_meteor_with_max_brightness(void);
+uint16_t led_strip_white_anim_sound_control_meteor3_with_max_brightness(void);
+
+u16 led_strip_white_anim_pwr_off(void);
+
+#endif
+

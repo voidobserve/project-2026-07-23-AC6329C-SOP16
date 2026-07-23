@@ -1,0 +1,208 @@
+#ifndef __LED_STRAND_EFFECT_H__
+#define __LED_STRAND_EFFECT_H__
+#include "cpu.h"
+#include "led_strip_sys.h"
+#include "WS2812FX.H"
+#include "led_strip_driver.h"
+#include "one_wire.h"
+
+#define MAX_SMEAR_LED_NUM 48 // 最多48个灯/48段
+#define ALARM_NUMBER 3       // 闹钟个数
+#define MAX_SOUND 10         // 声音ADC采集个数
+
+// 当前模式枚举
+typedef enum
+{
+    ACT_TY_PAIR,     // 配对效果
+    ACT_CUSTOM,      // 自定义效果
+    IS_STATIC,       // 静态模式
+    IS_light_music,  // 音乐律动
+    IS_light_scene,  // 炫彩情景
+    IS_smear_adjust, // 涂抹功能
+
+    IS_IN_MODE_PHONE_MIC, // 手机麦克风模式
+    COLORFUL_LIGHTS_STATIC,
+
+} Now_state_e;
+
+// 涂抹工具
+typedef enum
+{
+    IS_drum = 1,  // 油桶
+    IS_pen = 2,   // 画笔
+    IS_eraser = 3 // 橡皮檫
+} smear_tool_e;
+
+// 方向
+typedef enum
+{
+    IS_forward,
+    IS_back = 16,
+} direction_e;
+
+// 变化方式
+typedef enum
+{
+    MODE_MUTIL_RAINBOW = 2,            // 彩虹(多段颜色)
+    MODE_MUTIL_JUMP = 10,              // 跳变模式(多段颜色)
+    MODE_MUTIL_BRAETH = 11,            // 呼吸模式(多段颜色)
+    MODE_MUTIL_TWIHKLE = 12,           // 闪烁模式(多段颜色)
+    MODE_MUTIL_FLOW_WATER = 13,        // 流水模式(多段颜色)
+    MODE_CHAS_LIGHT = 14,              // 追光模式
+    MODE_MUTIL_COLORFUL = 15,          // 炫彩模式(多段颜色)
+    MODE_MUTIL_SEG_GRADUAL = 16,       // 渐变模式(多段颜色)
+    MODE_JUMP,                         // 标准跳变
+    MODE_STROBE,                       // 频闪，颜色之间插入黑mode
+    MODE_MUTIL_C_GRADUAL,              // 多种颜色切换整条渐变
+    MODE_2_C_FIX_FLOW,                 // 两种颜色混合流水，渐变色流水
+    MODE_SINGLE_FLASH_RANDOM = 21,     // 星空效果，单灯随机闪烁
+    MODE_SEG_FLASH_RANDOM = 22,        // 星云效果，一段随机闪烁
+    MODE_SINGLE_METEOR = 23,           // 流星效果
+    MODE_SINGLE_C_BREATH = 24,         // 单色呼吸
+    MODE_B_G_METEOR = 25,              // 带背景色流星
+    MODE_OPEN = 26,                    // 开幕式
+    MODE_CLOSE = 27,                   // 闭幕式
+    MODE_DOT_RUNNING = 28,             // 多个点跑马 ，点和点直接固定间隔5，支持每个点不同颜色，支持设置背景色
+    MODE_DOT_RUNNING_COLLECTIONS = 29, // 跑马集合模式
+    MODE_SINGLE_SUPERPOSITION = 30,    // 单色堆积
+    MODE_B_G_SUPERPOSITION = 31,       // 带底色堆积
+    MODE_MUTILE_SUPERPOSITION = 32,    // 多色堆积，不灭
+
+    // MODE_COLOR_METEOR = 29,   // 无背景色，指定颜色的流星
+    // MODE_JUMP_METEORR = 30,   // 跳变效果的流星
+    // MODE_GRADUAL_METEOR = 31, // 渐变效果的流星
+    // MODE_RAINBOW_FLOW = 32,
+
+    MODE_BREATH, // 呼吸，支持调节亮度，支持多种颜色（一种颜色呼吸完，切换到下一种颜色）
+
+    // MODE_COLORFUL_LIGHTS_FLASH, // 七彩灯频闪
+    // MODE_COLORFUL_JUMP,         // 七彩灯跳变
+    // MODE_COLORFUL_FADE,         // 七彩灯渐变
+    // MODE_COLORFUL_BREATH,       // 七彩灯呼吸
+
+    // MODE_COLORFUL_MUSIC_SINGLE_COLOR, // 七彩灯单色声控模式（由静态模式进入声控模式时，执行该模式）
+    // MODE_COLORFUL_MUSIC_DYNAMIC,      // 七彩灯声控模式（由动态模式进入声控模式时，执行该模式）
+
+    MODO_COLORFUL_LIGHTS_FLASH,   // 七彩灯动画，频闪（闪烁使用到的颜色，在颜色数组中循环索引，可以只有一个颜色 ）
+    MODE_COLORFUL_LIGHTS_JUMP,    // 七彩灯动画，跳变（跳变使用到的颜色，在颜色数组中循环索引 ）
+    MODE_COLORFUL_LIGHTS_GRADUAL, // 七彩灯动画，渐变（渐变使用到的颜色，在颜色数组中循环索引；至少要有两个颜色）
+    MODE_COLORFUL_LIGHTS_BREATH,  // 七彩灯动画，呼吸（呼吸使用到的颜色，在颜色数组中循环索引；可以只有一个颜色）
+    MODE_COLORFUL_LIGHTS_AUTO,    // 七彩灯动画，自动模式
+
+} change_type_e;
+
+#pragma pack(1)
+/*----------------------------涂抹功能结构体----------------------------------*/
+typedef struct
+{
+    smear_tool_e smear_tool;
+    color_t rgb[MAX_SMEAR_LED_NUM];
+} smear_adjust_t;
+
+/*----------------------------静态模式结构体----------------------------------*/
+
+/*----------------------------幻彩情景结构体----------------------------------*/
+typedef struct
+{
+
+    change_type_e change_type;   // 变化类型、模式
+    direction_e direction;       // 效果的方向
+    unsigned char seg_size;      // 段大小
+    unsigned char c_n;           // 颜色数量
+    color_t rgb[MAX_NUM_COLORS]; // 颜色池
+    unsigned short speed;        // 由档位决定
+
+} dream_scene_t;
+
+/*----------------------------倒计时结构体----------------------------------*/
+typedef struct
+{
+    unsigned char set_on_off;
+    unsigned long time;
+} countdown_t;
+
+typedef struct
+{
+
+    u8 hour;
+    u8 minute;
+    u8 second;
+    u8 week;
+
+} TIME_CLOCK;
+
+typedef struct
+{
+    u8 week;
+    u8 hour;
+    u8 minute;
+    u8 on_off;
+    u8 mode;
+
+} ALARM_CLOCK;
+
+typedef struct
+{
+    unsigned char m;      // 效果模式
+    unsigned char s;      // 灵敏度
+    unsigned char m_type; // 区分音乐的模式，手机麦或者外麦
+} music_t;
+
+/*----------------------------幻彩灯串效果大结构体----------------------------------*/
+typedef struct
+{
+    unsigned char on_off_flag; // 开关状态
+    u16 led_num;               // 灯点数
+    unsigned char sequence;    // RGB通道顺序
+    unsigned char b;           // 本地亮度 brightness 范围： 0 ~ 255
+    unsigned char b_per;       // 亮度档位，APP下发
+    unsigned char speed;       // 档位1-100
+    unsigned char app_b;       // 反馈给APP亮度 范围： 0 ~ 100
+    unsigned char app_speed;   // 反馈给APP速度 范围： 0 ~ 100
+
+    color_t rgb; // 静态模式颜色
+
+    unsigned char meteor_period; // 周期值，单位秒
+    unsigned char mode_cycle;    // 1:模式完成一个循环。0：正在跑，和meteor_period搭配用
+    u16 period_cnt;              // ms,运行时的计数器 范围： 2000 ~ 20000
+
+    u8 colorful_lights_sensitivity; // 声控模式下，七彩灯的灵敏度 范围： 0 ~ 100
+    Now_state_e Now_state;          // 当前运行模式
+    dream_scene_t dream_scene;      // 幻彩情景
+
+    music_t music; // 音乐效果
+
+    unsigned char auto_f;
+    base_ins_t base_ins; // 电机
+    unsigned char motor_on_off;
+    unsigned char star_on_off; // 流星开关
+    unsigned char star_index;
+    unsigned short star_speed;    // 流星灯动画的速度值 目前范围：30 - 330
+    u8 meteor_lights_sensitivity; // 声控模式下，流星灯的灵敏度
+    unsigned char app_star_speed; // 反馈给app的，流星灯动画的速度值
+
+    unsigned char motor_speed_index; // 电机模式或电机速度索引
+    unsigned char app_rgb_mode;      // 七彩灯的模式索引，一般由app设置，目前加入了遥控器切换
+
+    countdown_t countdown; // 倒计时
+
+    u8 custom_mode_index; // custom 模式索引
+
+} fc_effect_t;
+
+#pragma pack()
+
+extern volatile fc_effect_t fc_effect; // 幻彩灯串效果数据
+
+void set_fc_effect(void);
+// void base_Dynamic_Effect(u8 tp_num);
+
+void ls_set_color(uint8_t n, uint32_t c);  // 设置fc_effect.dream_scene.rgb的颜色池
+void ls_set_colors(uint8_t n, color_t *c); // 设置段的颜色
+
+void colorful_light_open(void);
+void colorful_light_close(void);
+void motor_open(void);
+void motor_close(void);
+
+#endif

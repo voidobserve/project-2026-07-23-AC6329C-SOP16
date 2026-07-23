@@ -1,0 +1,1001 @@
+
+
+#include "led_strip_sys.h"
+#include "Adafruit_NeoPixel.H"
+#include "led_strand_effect.h"
+
+#include "../../../apps/user_app/protocol/dp_data_tran.h"
+#include "../../../apps/user_app/one_wire/one_wire.h"
+#include "../../../apps/user_app/ws2812-fx-lib/WS2812FX_C/ws2812fx_effect.h"
+
+#include "user_include.h"
+
+#define MAX_BRIGHT_RANK 10
+#define MAX_SPEED_RANK 10
+#define MIN_BRIGHT_VALUE 10
+#define MIN_SLOW_SPEED 500
+#define MAX_FAST_SPEED 10
+
+#if (LED_STRIP_TYPE == TYPE_Fiber_optic_lights)
+#define MAX_MUSIC_EFFECT_NUMBER (4)
+#elif (LED_STRIP_TYPE == TYPE_Magic_lights)
+#define MAX_MUSIC_EFFECT_NUMBER (12)
+#endif
+
+// 效果数据初始化
+void fc_data_init(void)
+{
+    // 灯具
+    fc_effect.on_off_flag = DEVICE_ON; // 灯为开启状态
+    fc_effect.led_num = 12 + 1;        // 灯带的总灯珠数量（xx 个流星灯 + 1七彩灯）
+    // fc_effect.state_before_into_music = IS_STATIC;
+    fc_effect.Now_state = IS_STATIC; // 当前运行状态 静态
+    fc_effect.rgb.r = 255;
+    fc_effect.rgb.g = 0;
+    fc_effect.rgb.b = 0;
+#ifdef LED_STRIP_RGBW
+    // fc_effect.rgb.w = 255;
+    fc_effect.rgb.w = 0;
+#endif
+    fc_effect.dream_scene.c_n = 1; // 颜色数量为1
+    fc_effect.app_b = 100;         // 反馈给app的亮度
+    fc_effect.b = (u16)fc_effect.app_b * 255 / 100;
+
+    // fc_effect.ls_b = (MAX_BRIGHT_RANK - 1);
+    // fc_effect.ls_b = (MIN_BRIGHT_VALUE);
+
+    fc_effect.app_speed = 50;
+    /*
+        MODO_COLORFUL_LIGHTS_FLASH ~ MODE_COLORFUL_LIGHTS_AUTO 模式中，速度值范围：0 ~ 2000
+        一般只用 200 ~ 2000 这个范围，
+        这里通过计算将 fc_effect.dream_scene.speed 的值限制在 200 ~ 2000
+
+        MODO_COLORFUL_LIGHTS_FLASH ~ MODE_COLORFUL_LIGHTS_AUTO 模式中，速度值范围：0 ~ 5000
+        一般只用 200 ~ 5000 这个范围，
+        这里通过计算将 fc_effect.dream_scene.speed 的值限制在 200 ~ 5000
+    */
+    // fc_effect.dream_scene.speed = 2000 - ((u32)fc_effect.app_speed * (2000 - 200) / 100);
+    fc_effect.dream_scene.speed = 5000 - ((u32)fc_effect.app_speed * (5000 - 200) / 100);
+    // fc_effect.ls_speed = 3;
+    fc_effect.sequence = NEO_RBGW;
+    fc_effect.auto_f = IS_PAUSE;
+
+    // fc_effect.music.s = 80;
+    fc_effect.music.s = 100; // 默认灵敏度为最大
+    fc_effect.music.m = 0;
+    fc_effect.music.m_type = 0;
+
+    // fc_effect.colorful_lights_sensitivity = 80; // 七彩灯声控模式下，对应的灵敏度
+    fc_effect.colorful_lights_sensitivity = 85; // 七彩灯声控模式下，对应的灵敏度
+    // fc_effect.colorful_lights_sensitivity = 100; // 七彩灯声控模式下，对应的灵敏度
+
+    // fc_effect.app_rgb_mode = 0;
+    // 闹钟
+    // zd_countdown[0].set_on_off = DEVICE_OFF;
+    // zd_countdown[1].set_on_off = DEVICE_OFF;
+    // zd_countdown[2].set_on_off = DEVICE_OFF;
+    // ====================================================================
+    // 流星
+    fc_effect.star_on_off = DEVICE_ON;
+    fc_effect.star_index = 1;
+    fc_effect.app_star_speed = 80;
+    // fc_effect.app_star_speed = 20;
+    fc_effect.star_speed = (u32)330 * fc_effect.app_star_speed / 100;
+    // fc_effect.star_speed = (u32)100 * fc_effect.app_star_speed / 100;
+    fc_effect.meteor_period = 2;                           // 默认 2 秒  周期值
+    fc_effect.period_cnt = fc_effect.meteor_period * 1000; // 周期值计数值，单位 ms
+    fc_effect.mode_cycle = 0;                              // 模式完成一个循环的标志
+    // fc_effect.meteor_lights_sensitivity = 80;              // 流星灯声控模式下，对应的灵敏度
+    fc_effect.meteor_lights_sensitivity = 85; // 流星灯声控模式下，对应的灵敏度
+    // fc_effect.meteor_lights_sensitivity = 100; // 流星灯声控模式下，对应的灵敏度
+
+    // 电机
+    fc_effect.motor_on_off = DEVICE_ON;           // 默认 电机开启
+    fc_effect.base_ins.mode = MOTOR_MODE_FORWARD; // 默认正转
+    fc_effect.base_ins.last_mode = MOTOR_MODE_FORWARD;
+    fc_effect.motor_speed_index = 0; // 电机模式或电机速度索引
+    fc_effect.base_ins.period = motor_period[fc_effect.motor_speed_index];
+    // fc_effect.base_ins.sensitivity = 80; // 电机声控模式下，对应的灵敏度
+    fc_effect.base_ins.sensitivity = 85; // 电机声控模式下，对应的灵敏度
+    // fc_effect.base_ins.sensitivity = 100; // 电机声控模式下，对应的灵敏度
+}
+
+// void OpenMortor(void);
+// static u8 tk = 0;
+/*********************************************************
+ *
+ *      软件开机  关机 API
+ *
+ *********************************************************/
+void soft_turn_on_the_light(void) // 软开灯处理
+{
+    fc_effect.on_off_flag = DEVICE_ON;
+
+    // motor_Init();
+
+    if (DEVICE_ON == fc_effect.motor_on_off)
+    {
+        /*
+            如果在开灯之前，记录的电机状态是开着的，
+            这里也要一并打开电机
+        */
+
+        // 如果在开机前，电机是开着的，则恢复电机在开机前的状态
+        // if (6 == fc_effect.base_ins.mode)
+        // {
+        //     // 如果电机的模式是6（关闭），则改为4
+        //     fc_effect.base_ins.mode = 4;
+        // }
+
+        // if (fc_effect.base_ins.mode == MOTOR_MODE_STOP)
+        // {
+        //     // 如果电机模式是停止，改为默认的正转
+        //     fc_effect.base_ins.mode = MOTOR_MODE_FORWARD;
+        // }
+
+        fc_effect.base_ins.mode = fc_effect.base_ins.last_mode;
+    }
+
+    motor_package_data(fc_effect.base_ins.mode, fc_effect.base_ins.period);
+    os_taskq_post("msg_task", 1, MSG_SEQUENCER_ONE_WIRE_SEND_INFO);
+    // printf("fc_effect.motor_speed_index %u\n", (u16)fc_effect.motor_speed_index); // 打印电机的速度索引
+
+    set_fc_effect();         // 设置七彩灯的动画
+    ls_meteor_stat_effect(); // 设置流星灯的动画
+
+    fb_led_on_off_state(); // 与app同步开关状态
+    fd_meteor_on_off();    // 向app反馈流星灯开关的状态
+    fb_motor_mode();       // 向app反馈电机的模式
+    fb_motor_speed();      // 向app反馈电机转速
+
+    os_taskq_post("msg_task", 1, MSG_USER_SAVE_INFO);
+
+    printf("soft_turn_on_the_light\n");
+}
+
+void soft_turn_off_lights(void) // 软关灯处理
+{
+    fc_effect.on_off_flag = DEVICE_OFF;
+
+    /*
+        不给 fc_effect.motor_on_off 赋值为 DEVICE_OFF
+        下一次开灯时，要能够打开电机
+    */
+    // one_wire_set_mode(6); // 关闭电机
+    if (fc_effect.base_ins.mode != MOTOR_MODE_STOP)
+    {
+        fc_effect.base_ins.last_mode = fc_effect.base_ins.mode;
+    }
+    fc_effect.base_ins.mode = MOTOR_MODE_STOP;
+    motor_package_data(fc_effect.base_ins.mode, fc_effect.base_ins.period);
+    os_taskq_post("msg_task", 1, MSG_SEQUENCER_ONE_WIRE_SEND_INFO);
+
+    // 关闭七彩灯：（让七彩灯一直熄灭）
+    WS2812FX_setSegment_colorOptions(
+        0,                             // 第0段
+        0,                             // 起始位置
+        0,                             // 结束位置
+        &colorful_lights_effect_close, // 效果
+        0,                             // 颜色
+        0,                             // 速度
+        0);                            // 选项，这里像素点大小：3 REVERSE决定方向
+    WS2812FX_resetSegmentRuntime(0);   // 清除指定段的显示缓存
+    WS2812FX_running_flag_set();
+
+    WS2812FX_setSegment_colorOptions(
+        1,                           // 第0段
+        1,                           // 起始位置
+        fc_effect.led_num - 1,       // 结束位置
+        &close_metemor,              // 效果
+        0,                           // 颜色
+        fc_effect.star_speed,        // 速度
+        0);                          // 选项，这里像素点大小：3 REVERSE决定方向
+    WS2812FX_resetSegmentRuntime(1); // 清除指定段的显示缓存
+    WS2812FX_running_flag_set();
+
+    // WS2812FX_stop();
+    // WS2812FX_strip_off();
+
+    fb_led_on_off_state(); // 与app同步开关状态
+    fd_meteor_on_off();    // 向app反馈流星灯开关的状态
+    fb_motor_mode();       // 向app反馈电机的模式
+    fb_motor_speed();      // 向app反馈电机转速
+
+    os_taskq_post("msg_task", 1, MSG_USER_SAVE_INFO);
+    printf("soft_turn_off_lights\n");
+}
+
+/**
+ * @brief 打开 七彩灯
+ *      注意：调用前要先确保七彩灯的模式对应
+ *
+ * @return * void
+ */
+void colorful_light_open(void)
+{
+    fc_effect.on_off_flag = DEVICE_ON;
+    set_fc_effect(); // 设置七彩灯的动画
+}
+
+/**
+ * @brief 关闭 七彩灯
+ *
+ * @return * void
+ */
+void colorful_light_close(void)
+{
+    fc_effect.on_off_flag = DEVICE_OFF;
+    // 关闭七彩灯：（让七彩灯一直熄灭）
+    WS2812FX_setSegment_colorOptions(
+        0,                             // 第0段
+        0,                             // 起始位置
+        0,                             // 结束位置
+        &colorful_lights_effect_close, // 效果
+        0,                             // 颜色
+        0,                             // 速度
+        0);                            // 选项，这里像素点大小：3 REVERSE决定方向
+    WS2812FX_resetSegmentRuntime(0);   // 清除指定段的显示缓存
+    WS2812FX_running_flag_set();
+}
+
+// 打开 电机
+void motor_open(void)
+{
+    fc_effect.motor_on_off = DEVICE_ON;
+
+    // if (fc_effect.base_ins.mode == MOTOR_MODE_STOP)
+    // {
+    //     // 如果之前电机是停止状态，改成默认的 正转
+    //     fc_effect.base_ins.mode = MOTOR_MODE_FORWARD;
+    // }
+
+    fc_effect.base_ins.mode = fc_effect.base_ins.last_mode;
+
+    motor_package_data(fc_effect.base_ins.mode, fc_effect.base_ins.period);
+    os_taskq_post("msg_task", 1, MSG_SEQUENCER_ONE_WIRE_SEND_INFO);
+}
+
+// 关闭 电机
+void motor_close(void)
+{
+    fc_effect.motor_on_off = DEVICE_OFF;
+    // one_wire_set_mode(6); // 关闭电机
+
+    if (fc_effect.base_ins.mode != MOTOR_MODE_STOP)
+    {
+        fc_effect.base_ins.last_mode = fc_effect.base_ins.mode;
+    }
+
+    fc_effect.base_ins.mode = MOTOR_MODE_STOP;
+    motor_package_data(fc_effect.base_ins.mode, fc_effect.base_ins.period);
+    os_taskq_post("msg_task", 1, MSG_SEQUENCER_ONE_WIRE_SEND_INFO);
+}
+
+/**
+ * @brief 设置动态模式的速度值
+ *
+ * @param percent  0 ~ 100 %
+ */
+void colorful_lights_set_speed(u8 percent)
+{
+    // 将速度值限制在 200 ~ 5000 ， 0 ~ 100 % 映射到 5000 ~ 200
+    // 速度值越小，速度越快
+    fc_effect.dream_scene.speed = 5000 - ((u32)fc_effect.app_speed * (5000 - 200) / 100);
+}
+
+/**
+ * @brief 设置流星灯的速度值
+ *
+ * @param percent 0 ~ 100 %
+ */
+void meteor_lights_set_speed(u8 percent)
+{
+    // 最后得到的 fc_effect.star_speed 会在 30 ~ 330
+    fc_effect.star_speed = 330 - ((u32)percent * (330 - 30)) / 100;
+}
+
+void colorful_lights_set_brightness(u8 percent)
+{
+    /*
+        七彩灯的亮度值范围： 0 ~ 255 ，
+        但是只用到 25（255的10%） ~ 255，
+        这里通过计算，将 fc_effect.app_b 的 0 ~ 100 映射到 25 ~ 255
+    */
+    fc_effect.b = (u16)percent * (255 - 25) / 100 + 25;
+}
+
+
+
+/*********************************************************
+ *
+ *      亮度 速度 灵敏度 流星 API
+ *
+ *********************************************************/
+// const u8 led_b_array[MAX_BRIGHT_RANK] = {
+//     MIN_BRIGHT_VALUE, 50, 75, 100, 125,
+//     150, 175, 200, 225, 255}; // 0-255
+// const u16 led_speed_array[MAX_SPEED_RANK] = {
+//     MAX_FAST_SPEED, 100, 150, 200, 250,
+//     300, 350, 400, 450, MIN_SLOW_SPEED}; // 0-500
+
+/**
+ * @brief  APP设置亮度
+ *
+ * @param tp_b  0-100
+ */
+void app_set_bright(u8 tp_b)
+{
+    if (tp_b > 100)
+    {
+        tp_b = 100;
+    }
+
+    fc_effect.app_b = tp_b;
+    /*
+        七彩灯的亮度值范围： 0 ~ 255 ，
+        但是只用到 25（255的10%） ~ 255，
+        这里通过计算，将 fc_effect.app_b 的 0 ~ 100 映射到 25 ~ 255
+    */
+    // fc_effect.b = (u16)fc_effect.app_b * (255 - 25) / 100 + 25;
+    colorful_lights_set_brightness(tp_b);
+    WS2812FX_setBrightness(fc_effect.b);
+
+    printf("app_brightness = %u\n", (u16)fc_effect.app_b);
+    printf("fc_effect.b = %u\n", (u16)fc_effect.b);
+}
+
+/**
+ * @brief  根据灯带长度，获取最快的速度
+ *
+ * @return u16
+ */
+u16 get_max_sp(void)
+{
+    u16 speed;
+    speed = (u32)fc_effect.led_num * 30 / 1000; // 每个LED30us
+    if (speed < MAX_FAST_SPEED)
+        speed = MAX_FAST_SPEED;
+    return speed; //
+}
+
+/**
+ * @brief APP设置速度
+ *
+ * @param tp_speed  0-100  0是最慢  100是最快
+ */
+void app_set_speed(u8 tp_speed)
+{
+    // if (fc_effect.Now_state != IS_light_scene)
+    // {
+    //     // 如果七彩灯不处于对应的动态模式，则返回
+    //     return;
+    // }
+
+    if (tp_speed > 100)
+    {
+        tp_speed = 100;
+    }
+
+    fc_effect.app_speed = tp_speed;
+    /*
+        MODO_COLORFUL_LIGHTS_FLASH ~ MODE_COLORFUL_LIGHTS_AUTO 模式中，速度值范围：0 ~ 2000
+        一般只用 200 ~ 2000 这个范围，
+        这里通过计算将 fc_effect.dream_scene.speed 的值限制在 200 ~ 2000
+
+        MODO_COLORFUL_LIGHTS_FLASH ~ MODE_COLORFUL_LIGHTS_AUTO 模式中，速度值范围：0 ~ 5000
+        一般只用 200 ~ 5000 这个范围，
+        这里通过计算将 fc_effect.dream_scene.speed 的值限制在 200 ~ 5000
+    */
+    // fc_effect.dream_scene.speed = 2000 - ((u32)fc_effect.app_speed * (2000 - 200) / 100);
+    // fc_effect.dream_scene.speed = 5000 - ((u32)fc_effect.app_speed * (5000 - 200) / 100);
+    colorful_lights_set_speed(tp_speed);
+
+    printf("app_speed = %u\n", (u16)fc_effect.app_speed);
+    printf("fc_effect.dream_scene.speed = %u\n", (u16)fc_effect.dream_scene.speed);
+}
+
+/**
+ * @brief  app设置灵敏度
+ *
+ * @param tp_s  0-100;
+ */
+void app_set_sensitive(u8 tp_s)
+{
+    // 目前是同时设置所有的灵敏度
+    fc_effect.colorful_lights_sensitivity = tp_s;
+    fc_effect.meteor_lights_sensitivity = tp_s;
+    fc_effect.base_ins.sensitivity = tp_s;
+    fc_effect.music.s = tp_s;
+}
+
+/**
+ * @brief 遥控加灵敏度
+ *
+ *
+ */
+void ls_add_sensitive(void)
+{
+    // 数值越大，灵敏度越大
+    u8 sen_gap = 10;
+    if (fc_effect.Now_state == IS_light_music)
+    {
+        if (fc_effect.music.s < (100 - sen_gap))
+        {
+            fc_effect.music.s += sen_gap;
+        }
+        else
+        {
+            fc_effect.music.s = 100;
+        }
+    }
+
+    printf(" fc_effect.music.s= %d", fc_effect.music.s);
+}
+
+/**
+ * @brief 遥控减灵敏度
+ *
+ *
+ */
+void ls_sub_sensitive(void)
+{
+    // 数值越大，灵敏度越大
+    u8 sen_gap = 10;
+    if (fc_effect.Now_state == IS_light_music)
+    {
+        if (fc_effect.music.s > sen_gap)
+        {
+            fc_effect.music.s -= sen_gap;
+        }
+        else
+        {
+            fc_effect.music.s = 0;
+        }
+    }
+
+    printf(" fc_effect.music.s= %d", fc_effect.music.s);
+}
+
+/**
+ * @brief 遥控开关
+ *
+ */
+// void ls_ledStrip_switch(void)
+// {
+//     // fc_effect.on_off_flag == DEVICE_ON ? soft_turn_off_lights(): soft_turn_on_the_light();
+// }
+
+// 和通信协议对应
+u8 RGBsequence_map[6] =
+    {
+        NEO_RGB,
+        NEO_RBG,
+        NEO_GRB,
+        NEO_GBR,
+        NEO_BRG,
+        NEO_BGR,
+};
+
+// 和通信协议对应
+u8 RGBWsequence_map[6] =
+    {
+        NEO_RGBW,
+        NEO_RBGW,
+        NEO_GRBW,
+        NEO_GBRW,
+        NEO_BRGW,
+        NEO_BGRW,
+};
+/**
+ * @brief APP设置RGB顺序
+ *
+ * @param tp_s
+ */
+void app_set_RGBsequence(u8 tp_s)
+{
+
+    if (tp_s < 6)
+    {
+#if LED_STRIP_RGBW
+        fc_effect.sequence = RGBWsequence_map[tp_s];
+#elif LED_STRIP_RGB
+        fc_effect.sequence = RGBsequence_map[tp_s];
+#endif
+        WS2812FX_init(fc_effect.led_num, fc_effect.sequence);
+        fc_effect.Now_state = IS_STATIC; // 当前运行状态 静态
+        set_fc_effect();
+    }
+}
+
+/**
+ * @brief 设置声控使用手机麦还是外部麦
+ *
+ * @param tp_ty
+ */
+void set_music_type(u8 tp_ty)
+{
+    tp_ty == 1 ? (fc_effect.music.m_type = EXTERIOR_MIC) : (fc_effect.music.m_type = PHONE_MIC);
+}
+
+/**
+ * @brief 选择音乐效果
+ *
+ * @param tp_m
+ */
+void app_set_music_mode(u8 tp_m)
+{
+    if (fc_effect.music.m < MAX_MUSIC_EFFECT_NUMBER)
+    {
+        fc_effect.music.m = tp_m;
+    }
+    else
+    {
+        fc_effect.music.m = 0;
+    }
+    fc_effect.Now_state = IS_light_music;
+    set_fc_effect();
+}
+
+/**
+ * @brief 遥控选择音乐效果
+ *
+ */
+void ls_set_music_mode(void)
+{
+    if (IS_light_music != fc_effect.Now_state)
+    {
+        // 如果进入声控模式前，不处于声控模式
+        fc_effect.Now_state = IS_light_music;
+
+        if (fc_effect.music.m >= MAX_MUSIC_EFFECT_NUMBER)
+        {
+            // 如果进入声控模式前，声控模式的索引超出了范围
+            fc_effect.music.m = 0;
+        }
+    }
+    else
+    {
+        // 如果本身就处于声控模式
+        fc_effect.music.m++;
+        fc_effect.music.m %= MAX_MUSIC_EFFECT_NUMBER;
+    }
+
+    set_fc_effect();
+}
+
+void ls_pause_and_play(void)
+{
+
+    if (fc_effect.Now_state == IS_light_scene)
+    {
+        void WS2812FX_play(void);
+        void WS2812FX_pause();
+        extern uint8_t _running;
+        if (_running == 0)
+            WS2812FX_play();
+        else
+            WS2812FX_pause();
+    }
+}
+
+/**
+ * @brief 遥控器设置流星灯模式（可以循环）
+ *
+ */
+void meteor_set_mode_can_be_cycled(void)
+{
+    if (DEVICE_OFF == fc_effect.on_off_flag)
+    {
+        return;
+    }
+
+    fc_effect.star_index++;
+    if (fc_effect.star_index > 16) // 超出了索引范围，从头开始
+    {
+        fc_effect.star_index = 0;
+    }
+
+    // 根据索引设置流星灯模式
+    ls_meteor_stat_effect();
+}
+
+/*********************************************************
+ *
+ *      流星效果设置 API
+ *
+ *********************************************************/
+
+// 时间递减
+// sub:减数，ms
+// 放在了while循环，10ms减一次
+// fc_effect.meteor_period = 8;//默认8秒  周期值
+// fc_effect.period_cnt = fc_effect.meteor_period*1000;  //ms,运行时的计数器 8000ms
+// void meteor_period_sub(void)
+// {
+
+//     if (fc_effect.period_cnt > 10)
+//     {
+//         fc_effect.period_cnt -= 10;
+//     }
+//     else
+//     {
+//         fc_effect.period_cnt = 0; // 计数器清零
+//         if (fc_effect.mode_cycle) // 模式循环完成，更新
+//         {
+//             fc_effect.period_cnt = fc_effect.meteor_period * 1000;
+//             fc_effect.mode_cycle = 0;
+//         }
+//     }
+// }
+
+// 0:计时完成
+// 1：计时中
+u8 get_effect_p(void)
+{
+    if (fc_effect.period_cnt > 0)
+        return 1;
+    else
+        return 0;
+}
+
+/**
+ * @brief 设置流星周期时间
+ *
+ * @param tp_p
+ */
+void app_set_meteor_pro(u8 tp_p)
+{
+    if (tp_p >= 2 && tp_p <= 20)
+    {
+        fc_effect.meteor_period = tp_p;
+        fc_effect.period_cnt = (u16)fc_effect.meteor_period * 1000;
+    }
+
+    printf("fc_effect.meteor_period = %u\n", (u16)fc_effect.meteor_period);
+    printf("fc_effect.period_cnt = %u\n", (u16)fc_effect.period_cnt);
+}
+
+/**
+ * @brief 通过app设置流星开关
+ *
+ * @param tp_sw // 1 -- 开启，2--关闭
+ */
+// void app_set_on_off_meteor(u8 tp_sw)
+// {
+//     if (1 == tp_sw)
+//     {
+//         fc_effect.star_on_off = DEVICE_ON;
+//     }
+//     else
+//     {
+//         fc_effect.star_on_off = DEVICE_OFF;
+//     }
+
+//     if (DEVICE_ON == fc_effect.star_on_off)
+//     {
+//         ls_meteor_stat_effect();
+//     }
+//     else
+//     {
+//         WS2812FX_stop();
+//         WS2812FX_setSegment_colorOptions(
+//             1,                     // 第0段
+//             1,                     // 起始位置
+//             fc_effect.led_num - 1, // 结束位置
+//             &close_metemor,        // 效果
+//             0,                     // 颜色
+//             fc_effect.star_speed,  // 速度
+//             0);                    // 选项，这里像素点大小：3 REVERSE决定方向
+//         // WS2812FX_start();
+//         WS2812FX_resetSegmentRuntime(1); // 重置流星灯所在的段运行时参数
+//         WS2812FX_running_flag_set();
+//     }
+
+//     // printf("fc_effect.star_on_off == %u\n", (u16)fc_effect.star_on_off);
+// }
+
+/**
+ * @brief app设置流星模式
+ *
+ *
+ * @param tp_m
+ */
+void app_set_mereor_mode(u8 tp_m)
+{
+    if (tp_m <= 16) // void custom_meteor_effect(void)有关
+    {
+        fc_effect.star_index = tp_m;
+        ls_meteor_stat_effect();
+#if USER_DEBUG_ENABLE
+        printf(" fc_effect.star_index  = %d\n", fc_effect.star_index);
+#endif
+    }
+    else
+    {
+#if USER_DEBUG_ENABLE
+        printf("func: app_set_mereor_mode\n");
+        printf("param error\n");
+#endif
+    }
+}
+
+#define MAX_STAR_SEPPD 300
+/**
+ * @brief APP设置流星速度
+ *
+ * @param tp_s
+ */
+void app_set_mereor_speed(u8 tp_s)
+{
+    if (DEVICE_OFF == fc_effect.star_on_off)
+        return;
+    fc_effect.app_star_speed = tp_s;
+
+    /*
+        tp_s ： 0 ~ 100
+        最后得到的 fc_effect.star_speed 会在 30 ~ 330
+    */
+    fc_effect.star_speed = MAX_STAR_SEPPD * (100 - fc_effect.app_star_speed + 10) / 100;
+    printf("fc_effect.app_star_speed = %u\n", (u16)fc_effect.app_star_speed);
+    printf("fc_effect.star_speed = %u\n", (u16)fc_effect.star_speed);
+}
+
+u8 get_custom_index(void)
+{
+    return fc_effect.star_index;
+}
+
+// 30 -300
+
+void ls_set_star_speed(void)
+{
+    if (fc_effect.star_on_off != DEVICE_ON)
+        return;
+
+    if (fc_effect.app_star_speed <= (100 - 10))
+    {
+        fc_effect.app_star_speed += 10;
+    }
+    else
+    {
+        fc_effect.app_star_speed = 10;
+    }
+
+    fc_effect.star_speed = MAX_STAR_SEPPD * (100 - fc_effect.app_star_speed + 10) / 100;
+
+    ls_meteor_stat_effect();
+    // printf("fc_effect.star_speed  = %d", fc_effect.app_star_speed);
+    printf(" fc_effect.star_speed = %d", fc_effect.star_speed);
+    fd_meteor_speed();
+}
+
+void ls_add_star_speed(void)
+{
+    if (fc_effect.star_on_off != DEVICE_ON)
+        return;
+
+    if (fc_effect.app_star_speed <= (100 - 10))
+    {
+        fc_effect.app_star_speed += 10;
+    }
+    else
+    {
+        fc_effect.app_star_speed = 100;
+    }
+
+    fc_effect.star_speed = MAX_STAR_SEPPD * (100 - fc_effect.app_star_speed + 10) / 100;
+
+    ls_meteor_stat_effect();
+    // printf("fc_effect.star_speed  = %d", fc_effect.app_star_speed);
+    printf(" fc_effect.star_speed = %d", fc_effect.star_speed);
+    fd_meteor_speed();
+}
+
+void ls_sub_star_speed(void)
+{
+
+    if (fc_effect.star_on_off != DEVICE_ON)
+        return;
+
+    if (fc_effect.app_star_speed > 10)
+    {
+        fc_effect.app_star_speed -= 10;
+    }
+    else
+    {
+        fc_effect.app_star_speed = 10;
+    }
+
+    fc_effect.star_speed = MAX_STAR_SEPPD * (100 - fc_effect.app_star_speed + 10) / 100;
+
+    ls_meteor_stat_effect();
+    printf("fc_effect.star_speed  = %d", fc_effect.app_star_speed);
+    printf(" fc_effect.star_speed = %d", fc_effect.star_speed);
+    fd_meteor_speed();
+}
+
+const u8 meteor_cycle[5] = {2, 8, 12, 16, 20}; // 2s 8s 12s 16s 20s
+u8 cycle_cntt = 0;
+
+// 由遥控器设置流星灯周期
+// void ls_set_star_pro(void)
+// {
+//     if (fc_effect.star_on_off != DEVICE_ON)
+//         return;
+//     app_set_meteor_pro(meteor_cycle[cycle_cntt]);
+//     ls_meteor_stat_effect();
+//     cycle_cntt++;
+//     if (cycle_cntt > 4)
+//         cycle_cntt = 0;
+
+//     printf("fc_effect.meteor_period = %d", fc_effect.meteor_period);
+//     fd_meteor_cycle();
+// }
+
+/*********************************************************
+ *
+ *      电机效果设置 API
+ *
+ *********************************************************/
+void ls_add_motor_speed(void)
+{
+    // 目前是索引值越小，电机转速越快
+    if (fc_effect.motor_speed_index > 0)
+    {
+        fc_effect.motor_speed_index--;
+        // one_wire_set_period(motor_period[fc_effect.motor_speed_index]);
+        fc_effect.base_ins.period = motor_period[fc_effect.motor_speed_index];
+        // enable_one_wire();
+        motor_package_data(fc_effect.base_ins.mode, fc_effect.base_ins.period);
+        os_taskq_post("msg_task", 1, MSG_SEQUENCER_ONE_WIRE_SEND_INFO);
+
+        // printf("fc_effect.motor_speed_index = %d", fc_effect.motor_speed_index);
+    }
+}
+
+void ls_sub_motor_speed(void)
+{
+    // 目前是索引值越小，电机转速越快
+    if (fc_effect.motor_speed_index < 5)
+    {
+        fc_effect.motor_speed_index++;
+        one_wire_set_period(motor_period[fc_effect.motor_speed_index]);
+        // enable_one_wire();
+
+        motor_package_data(fc_effect.base_ins.mode, fc_effect.base_ins.period);
+        os_taskq_post("msg_task", 1, MSG_SEQUENCER_ONE_WIRE_SEND_INFO);
+
+        // printf("fc_effect.motor_speed_index = %d", fc_effect.motor_speed_index);
+    }
+}
+
+/*********************************************************
+ *
+ *      灯光效果设置 API
+ *
+ *********************************************************/
+
+ON_OFF_FLAG get_on_off_state(void)
+{
+    return fc_effect.on_off_flag;
+}
+
+// void set_on_off_led(u8 on_off)
+// {
+//     if (on_off == DEVICE_ON)
+//     {
+//         soft_turn_on_the_light(); // 开灯
+//     }
+//     else
+//     {
+//         soft_turn_off_lights(); // 关灯
+//     }
+// }
+
+/**
+ * @brief APP设置纯白光的颜色
+ *
+ * @param tp_w  0-100
+ */
+void app_set_w(u8 tp_w)
+{
+#if LED_STRIP_RGBW
+    fc_effect.Now_state = IS_STATIC;
+    fc_effect.rgb.r = 0;
+    fc_effect.rgb.g = 0;
+    fc_effect.rgb.b = 0;
+    fc_effect.rgb.w = (u32)tp_w * 255 / 100;
+    set_fc_effect(); // 效果调度
+#endif
+}
+
+// 静态效果设置
+void set_static_mode(u8 r, u8 g, u8 b)
+{
+    fc_effect.Now_state = IS_STATIC;
+    fc_effect.dream_scene.rgb[0].r = r;
+    fc_effect.dream_scene.rgb[0].g = g;
+    fc_effect.dream_scene.rgb[0].b = b;
+    // fc_effect.rgb.w = 0;
+
+    // printf("r = %d, g = %d, b = %d", r, g, b);
+
+    led_strip_rgb_schedule();
+}
+
+/**
+ * @brief 七彩灯设置为静态模式，颜色值由传参设定
+ *
+ * @param colors_structure 结构体必须包含 r、g、b、w 成员
+ *
+ */
+void colorful_lights_set_static_mode(color_t colors_structure)
+{
+    fc_effect.Now_state = IS_STATIC;
+
+    fc_effect.rgb.r = colors_structure.r;
+    fc_effect.rgb.g = colors_structure.g;
+    fc_effect.rgb.b = colors_structure.b;
+    // fc_effect.rgb.w = colors_structure.w;
+
+    set_fc_effect(); // 效果调度
+}
+
+/**
+ * @brief 七彩灯设置为静态模式，颜色值由传参设定
+ *
+ * @param color 颜色 （需要注意RGBW顺序）
+ */
+void colorful_lights_set_static_color(u32 color)
+{
+    fc_effect.Now_state = IS_STATIC;
+
+    fc_effect.rgb.r = color >> 16;
+    fc_effect.rgb.g = color >> 8;
+    fc_effect.rgb.b = color;
+    // fc_effect.rgb.w = color >> 24;
+
+    set_fc_effect(); // 效果调度
+}
+
+// 全彩效果初始化
+void full_color_init(void)
+{
+    WS2812FX_init(
+        (LED_STRIP_RGB_LEN + LED_STRIP_WHITE_LEN),
+        fc_effect.sequence); // 初始化ws2811
+    WS2812FX_setBrightness(fc_effect.b);
+
+    // if (fc_effect.on_off_flag == DEVICE_ON)
+    // {
+    //     colorful_light_open();
+    // }
+    // else
+    // {
+    //     colorful_light_close();
+    // }
+    // fb_led_on_off_state(); // 与app反馈七彩灯的开关状态
+ 
+#if 0
+    if (fc_effect.star_on_off == DEVICE_ON)
+    {
+        ls_meteor_stat_effect();
+    }
+    else
+    {
+        WS2812FX_stop();
+        WS2812FX_setSegment_colorOptions(
+            1,                     // 第0段
+            1,                     // 起始位置
+            fc_effect.led_num - 1, // 结束位置
+            &close_metemor,        // 效果
+            0,                     // 颜色
+            fc_effect.star_speed,  // 速度
+            0);                    // 选项，这里像素点大小：3 REVERSE决定方向
+        // WS2812FX_start();
+        WS2812FX_resetSegmentRuntime(1); // 重置流星灯所在的段运行时参数
+        WS2812FX_running_flag_set();
+    }
+    fd_meteor_on_off();
+#endif
+}
