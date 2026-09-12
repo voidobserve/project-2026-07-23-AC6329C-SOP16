@@ -3,7 +3,7 @@
 
 #include "includes.h"
 
-#define RF24GKEY_ENABLE 1
+#define RF24GKEY_ENABLE 0
 
 #if (RF24GKEY_ENABLE)
 

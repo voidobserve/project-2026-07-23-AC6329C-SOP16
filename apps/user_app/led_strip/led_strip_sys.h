@@ -161,6 +161,6 @@ void app_set_mereor_speed(u8 tp_s); // 通过app设置流星速度
 void app_set_meteor_pro(u8 tp_p); // 通过app设置流星灯周期
 void app_set_sensitive(u8 tp_s); // 通过app设置灵敏度
 
-u16 get_max_sp(void);
+u16 get_max_speed(void);
 
 #endif

@@ -2,17 +2,10 @@
 #include "typedef.h"
 #include "Adafruit_NeoPixel.H"
 
+#if 0
 #define APP_MSG_MAX_LEN 20
 
-// 和通信协议对应
-const u8 rgb_sequence_map[6] =	{
-		NEO_RGB,
-		NEO_RBG,
-		NEO_GRB,
-		NEO_GBR,
-		NEO_BRG,
-		NEO_BGR,
-};
+
 
 typedef enum
 {
@@ -35,3 +28,5 @@ app_msg_map_t app_msg_map = {
 void app_msg_map_init(void)
 {
 }
+
+#endif

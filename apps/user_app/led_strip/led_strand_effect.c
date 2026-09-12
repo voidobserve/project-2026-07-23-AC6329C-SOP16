@@ -1037,7 +1037,7 @@ void ls_meteor_stat_effect(void)
     WS2812FX_setSegment_colorOptions(
         LED_STRIP_WHITE_STAR_INDEX,  // 第 x 段
         LED_STRIP_WHITE_STAR_INDEX,  // 起始位置
-        LED_STRIP_WHITE_LEN - 1,     // 结束位置
+        LED_STRIP_WHITE_NUMS - 1,     // 结束位置
         meteor_light_mode_ptr,       // 效果
         WHITE,                       // 颜色
         fc_effect.star_speed,        // 速度

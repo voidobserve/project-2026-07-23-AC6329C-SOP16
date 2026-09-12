@@ -1510,10 +1510,8 @@ u16 meteor_lights_half_flow_with_max_brightness(void)
     {
         SET_CYCLE;
         _seg_rt->aux_param = !_seg_rt->aux_param;
-
-        // fc_effect.mode_cycle = 1;
-        return fc_effect.period_cnt;
-        // return 1000;
+ 
+        return fc_effect.period_cnt; 
     }
 
     return (_seg->speed);
@@ -2254,6 +2252,8 @@ void mode9(void)
 
 //-----------------------------------涂鸦的开关机，解绑效果------------------------------
 #pragma region
+
+#if 0
 // 开机效果
 uint16_t power_on_effect(void)
 {
@@ -2269,12 +2269,15 @@ uint16_t power_on_effect(void)
     _seg_rt->aux_param++;
     if (_seg_rt->aux_param > 6)
     {
+        #if 0  
         extern void read_flash_device_status_init(void);
         read_flash_device_status_init();
         set_fc_effect();
+        #endif
     }
     return (500);
 }
+#endif
 
 uint16_t power_off_effect(void)
 {

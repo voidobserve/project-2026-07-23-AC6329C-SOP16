@@ -2,17 +2,41 @@
 #include "asm/adc_api.h"
 #include "led_strip_driver.h"
 
-#include "../../../apps/user_app/ws2812-fx-lib/WS2812FX_C/WS2812FX.H"
+#include "WS2812FX.H"
 #include "user_include.h"
 #include "led_strip_white_schedule.h"
+#include "led_strip_rgb_anim.h"
 
-static volatile u8 flag_sound_triggered_in_colorful_lights = 0; // 标志位，七彩灯触发声控。0--未触发，1--触发
-static volatile u8 flag_sound_triggered_in_meteor_lights = 0;   // 标志位，流星灯触发声控。0--未触发，1--触发
+// 标志位，七彩灯触发声控。0--未触发，1--触发
+static volatile u8 flag_sound_triggered_in_colorful_lights = 0;
+// 标志位，流星灯触发声控。0--未触发，1--触发
+static volatile u8 flag_sound_triggered_in_meteor_lights = 0;
+// 标志位，电机声控模式下，触发声控，0--未触发，1--触发
+static volatile u8 flag_sound_triggered_in_motor = 0;
 
-static volatile u8 flag_sound_triggered_in_motor = 0; // 标志位，电机声控模式下，触发声控，0--未触发，1--触发
+// 纯白色流星灯使用到的声控触发标志位
+static volatile u8 flag_sound_triggered_in_led_strip_white = 0;
+// RGB 幻彩灯使用到的声控触发标志位
+static volatile u8 flag_sound_triggered_in_led_strip_rgb = 0;
 
-static volatile u8 flag_sound_triggered_in_led_strip_white = 0; // 纯白色流星灯使用到的声控触发标志位
-static volatile u8 flag_sound_triggered_in_led_strip_rgb = 0;   // RGB 幻彩灯使用到的声控触发标志位
+void sound_ctl_init(void)
+{
+    adc_add_sample_ch(SOUND_CTL_ADC_CHANNEL);
+    gpio_set_die(SOUND_CTL_PIN, 0);
+    gpio_set_direction(SOUND_CTL_PIN, 1);
+    gpio_set_pull_down(SOUND_CTL_PIN, 0);
+}
+
+/**
+ * @brief 获取声控检测脚对应的ad值
+ * 
+ * @return u16
+ * 
+ */
+u16 sound_ctl_get_adc_val(void)
+{
+    return adc_get_value(SOUND_CTL_ADC_CHANNEL);
+}
 
 u8 get_sound_triggered_by_led_strip_white(void)
 {
@@ -67,22 +91,19 @@ void sound_triggered_by_motor_clear(void)
  */
 void colorful_lights_sound_sensitivity_add(void)
 {
-    if (IS_light_music != fc_effect.Now_state)
-    {
+    if (IS_light_music != fc_effect.Now_state) {
         return;
     }
 
     const u8 step = 10;
-    if (fc_effect.colorful_lights_sensitivity < 100 - step)
-    {
+    if (fc_effect.colorful_lights_sensitivity < 100 - step) {
         fc_effect.colorful_lights_sensitivity += step;
-    }
-    else
-    {
+    } else {
         fc_effect.colorful_lights_sensitivity = 100;
     }
 
-    printf("fc_effect.colorful_lights_sensitivity %u\n", (u16)fc_effect.colorful_lights_sensitivity);
+    printf("fc_effect.colorful_lights_sensitivity %u\n",
+           (u16)fc_effect.colorful_lights_sensitivity);
 }
 
 /**
@@ -92,22 +113,19 @@ void colorful_lights_sound_sensitivity_add(void)
  */
 void colorful_lights_sound_sensitivity_sub(void)
 {
-    if (IS_light_music != fc_effect.Now_state)
-    {
+    if (IS_light_music != fc_effect.Now_state) {
         return;
     }
 
     const u8 step = 10;
-    if (fc_effect.colorful_lights_sensitivity > step)
-    {
+    if (fc_effect.colorful_lights_sensitivity > step) {
         fc_effect.colorful_lights_sensitivity -= step;
-    }
-    else
-    {
+    } else {
         fc_effect.colorful_lights_sensitivity = 0;
     }
 
-    printf("fc_effect.colorful_lights_sensitivity %u\n", (u16)fc_effect.colorful_lights_sensitivity);
+    printf("fc_effect.colorful_lights_sensitivity %u\n",
+           (u16)fc_effect.colorful_lights_sensitivity);
 }
 
 /**
@@ -118,16 +136,14 @@ void colorful_lights_sound_sensitivity_sub(void)
 void meteor_lights_sound_sensitivity_add(void)
 {
     const u8 step = 10;
-    if (fc_effect.meteor_lights_sensitivity < 100 - step)
-    {
+    if (fc_effect.meteor_lights_sensitivity < 100 - step) {
         fc_effect.meteor_lights_sensitivity += step;
-    }
-    else
-    {
+    } else {
         fc_effect.meteor_lights_sensitivity = 100;
     }
 
-    printf("fc_effect.meteor_lights_sensitivity %u\n", (u16)fc_effect.meteor_lights_sensitivity);
+    printf("fc_effect.meteor_lights_sensitivity %u\n",
+           (u16)fc_effect.meteor_lights_sensitivity);
 }
 
 /**
@@ -138,27 +154,22 @@ void meteor_lights_sound_sensitivity_add(void)
 void meteor_lights_sound_sensitivity_sub(void)
 {
     const u8 step = 10;
-    if (fc_effect.meteor_lights_sensitivity > step)
-    {
+    if (fc_effect.meteor_lights_sensitivity > step) {
         fc_effect.meteor_lights_sensitivity -= step;
-    }
-    else
-    {
+    } else {
         fc_effect.meteor_lights_sensitivity = 0;
     }
 
-    printf("fc_effect.meteor_lights_sensitivity %u\n", (u16)fc_effect.meteor_lights_sensitivity);
+    printf("fc_effect.meteor_lights_sensitivity %u\n",
+           (u16)fc_effect.meteor_lights_sensitivity);
 }
 
 void motor_sound_sensitivity_add(void)
 {
     const u8 step = 10;
-    if (fc_effect.base_ins.sensitivity < 100 - step)
-    {
+    if (fc_effect.base_ins.sensitivity < 100 - step) {
         fc_effect.base_ins.sensitivity += step;
-    }
-    else
-    {
+    } else {
         fc_effect.base_ins.sensitivity = 100;
     }
 
@@ -170,12 +181,9 @@ void motor_sound_sensitivity_add(void)
 void motor_sound_sensitivity_sub(void)
 {
     const u8 step = 10;
-    if (fc_effect.base_ins.sensitivity > 0 + step)
-    {
+    if (fc_effect.base_ins.sensitivity > 0 + step) {
         fc_effect.base_ins.sensitivity -= step;
-    }
-    else
-    {
+    } else {
         fc_effect.base_ins.sensitivity = 0;
     }
 
@@ -202,23 +210,21 @@ void sound_handle(void)
     u32 adc_ttl = 0;
 
     // 记录adc值
-    adc = check_mic_adc(); // 每次进入，采集一次ad值（即使不在声控模式，也会占用一些时间）
+    // 每次进入，采集一次ad值（即使不在声控模式，也会占用一些时间）
+    adc = sound_ctl_get_adc_val();
 
     // printf("adc == %u\n", adc);
 
-    if (adc >= 1000)
-    {
+    if (adc >= 1000) {
         return;
     }
 
-    if (adc_sum_n < 2000)
-    {
+    if (adc_sum_n < 2000) {
         // 从0开始，一直加到2000，每10ms加一，总共要20s
         adc_sum_n++;
     }
 
-    if (adc_sum_n == 2000)
-    {
+    if (adc_sum_n == 2000) {
         if (adc / (adc_sum / adc_sum_n) > 3)
             return; // adc突变，大于平均值的3倍，丢弃该值
 
@@ -233,8 +239,7 @@ void sound_handle(void)
     adc_all = 0;
 
     // 计算ad值总和
-    for (u8 i = 0; i < SAMPLE_N; i++)
-    {
+    for (u8 i = 0; i < SAMPLE_N; i++) {
         adc_all += adc_v[i];
     }
 
@@ -245,37 +250,34 @@ void sound_handle(void)
     adc_ttl = 0;
 
     // 在平均值的基础上，再求总和
-    for (u8 i = 0; i < 10; i++)
-    {
+    for (u8 i = 0; i < 10; i++) {
         adc_ttl += adc_avrg[i];
     }
 
-    memmove((u8 *)adc_total, (u8 *)adc_total + 4, 14 * 4); // 将 src 指向的内存区域中的前 n 个字节复制到 dest 指向的内存区域（能够安全地处理内存重叠的情况）
+    memmove(
+        (u8 *)adc_total, (u8 *)adc_total + 4,
+        14 *
+            4); // 将 src 指向的内存区域中的前 n 个字节复制到 dest 指向的内存区域（能够安全地处理内存重叠的情况）
 
     adc_total[14] = adc_ttl / 10; // 总数平均值
     // trg = 0;
 
-    if (adc_sum_n != 0)
-    {
-        if (adc * fc_effect.music.s / 100 > adc_sum / adc_sum_n)
-        {
+    if (adc_sum_n != 0) {
+        if (adc * fc_effect.music.s / 100 > adc_sum / adc_sum_n) {
             u32 adc_sum_avrg = adc_sum / adc_sum_n;
 
-            if (adc * led_strip_white.sensitivity / 100 > adc_sum_avrg)
-            {
+            if (adc * led_strip_white.sensitivity / 100 > adc_sum_avrg) {
                 // 如果流星灯在声控模式，并且触发了声控
-                if (DEVICE_ON == led_strip_white.is_dev_open &&
-                    (15 == led_strip_white.mode_index ||
-                     16 == led_strip_white.mode_index))
-                {
-                    // 如果流星灯处于声控模式，会进入这里
-                    flag_sound_triggered_in_led_strip_white = 1;
-                    WS2812FX_triggered_by_led_strip_white();
-                }
+                // if (DEVICE_ON == led_strip_white.is_dev_open &&
+                //     (15 == led_strip_white.mode_index ||
+                //      16 == led_strip_white.mode_index)) {
+                //     // 如果流星灯处于声控模式，会进入这里
+                //     flag_sound_triggered_in_led_strip_white = 1;
+                //     WS2812FX_triggered_by_led_strip_white();
+                // }
 
                 if (DEVICE_ON == fc_effect.on_off_flag &&
-                    fc_effect.Now_state == IS_light_music)
-                {
+                    fc_effect.Now_state == IS_light_music) {
                     // 如果七彩灯处于声控模式，会进入这里
                     flag_sound_triggered_in_led_strip_rgb = 1;
                     // WS2812FX_triggered_by_colorful_lights();
@@ -283,18 +285,20 @@ void sound_handle(void)
                 }
             }
 
-            if (adc > adc_sum_avrg)
-            {
+            if (adc > adc_sum_avrg) {
+                u8 adc_percent = (adc - adc_sum_avrg) * fc_effect.music.s / adc;
                 if (fc_effect.Now_state == IS_light_music &&
-                    fc_effect.music.m == 2)
-                {
+                    fc_effect.music.m == 2) {
                     /*
                         处于声控模式，并且正在跑
                         led_strip_rgb_anim_sound_control_feq_rise 模式(动画)
                     */
                     __led_strip_rgb_anim_sound_control_feq_rise_set__(
-                        (adc - adc_sum_avrg) * 100 * fc_effect.music.s /
-                        100 / adc_sum_avrg);
+                        adc_percent);
+                }
+
+                if (fc_effect.Now_state == IS_light_music) {
+                    music_open_close_set_trigger_len(adc_percent);
                 }
             }
         }

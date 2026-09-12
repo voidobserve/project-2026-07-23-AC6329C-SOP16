@@ -19,9 +19,9 @@ void led_strip_rgb_set_speed(u8 speed_percent)
 {
 	fc_effect.app_speed = speed_percent;
 	fc_effect.dream_scene.speed = 500 - (500 * speed_percent / 100);
-	if (fc_effect.dream_scene.speed < get_max_sp())
+	if (fc_effect.dream_scene.speed < get_max_speed())
 	{
-		fc_effect.dream_scene.speed = get_max_sp();
+		fc_effect.dream_scene.speed = get_max_speed();
 	}
 }
 

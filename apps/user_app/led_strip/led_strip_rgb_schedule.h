@@ -16,6 +16,8 @@ typedef struct
 	led_strip_rgb_handler_t handler; // 灯光情景对应的处理函数
 } led_strip_rgb_handler_map_t;
 
+void meteor_period_sub(void);
+
 void led_strip_rgb_schedule_set_mode(mode_ptr mode, u16 speed, u8 option);
 
 void led_strip_rgb_schedule_init(void);

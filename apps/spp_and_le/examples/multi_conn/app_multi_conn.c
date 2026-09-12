@@ -18,6 +18,8 @@
 #include "le_client_demo.h"
 #include "app_comm_bt.h"
 
+#include "user_include.h" 
+
 #define LOG_TAG_CONST       MULTI_CONN
 #define LOG_TAG             "[MULTI_CONN]"
 #define LOG_ERROR_ENABLE
@@ -91,10 +93,12 @@ static void multi_app_start()
 
 #endif
 
+    // 移植的旧版本的接口
+    // extern void my_main(void); 
+    // my_main();
 
-    extern void my_main(void);
-
-    my_main();
+    // 目前使用的新接口
+    user_init();
 
     /* 按键消息使能 */
     sys_key_event_enable();

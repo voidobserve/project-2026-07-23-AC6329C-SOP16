@@ -15,13 +15,12 @@ typedef struct
     u8 send_buff_head;
     u8 send_buff_tail;
     u8 send_buff_num;
-
-    // 存放指令
-    void (*param_put)(u8 *buff, u16 len);
-    // 指令处理函数
-    void (*param_handle)(void);
+ 
 } user_ble_notify_t;
 
-extern volatile user_ble_notify_t user_ble_notify_obj;
+// extern volatile user_ble_notify_t user_ble_notify_param;
+
+void user_ble_notify_param_put(u8 *buff, u16 len);
+void user_ble_notify_param_handle(void);
 
 #endif

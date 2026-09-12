@@ -25,21 +25,7 @@
         // 保存文件时自动格式化
         "editor.formatOnSave": false,
     },
-    "files.associations": {
-        "board_ac6329c_demo_global_build_cfg.h": "c",
-        "rf24g_key.h": "c",
-        "one_wire.h": "c",
-        "btstack_event.h": "c",
-        "adafruit_typedef.h": "c",
-        "led_strip_sys.h": "c",
-        "led_strand_effect.h": "c",
-        "includes.h": "c",
-        "rf24g_app.h": "c",
-        "save_flash.h": "c",
-        "rf433_key.h": "c",
-        "ws2812fx_effect.h": "c",
-        "ws2812fx.h": "c",
-        "WS2812FX.H": "cpp",
-        "rf433_learn.h": "c"
-    }
+    // clang-format配置
+    "C_Cpp.formatting": "clangFormat",
+    "Codegeex.RepoIndex": true, // 使用 clang-format 进行格式化
 }

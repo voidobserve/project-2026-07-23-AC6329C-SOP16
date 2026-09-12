@@ -2,7 +2,7 @@
 <CodeBlocks_project_file>
 	<FileVersion major="1" minor="6" />
 	<Project>
-		<Option title="世纪光电 TSL Light" />
+		<Option title="世纪光电 Light Flow" />
 		<Option compiler="q32s_lto_compiler" />
 		<Build>
 			<Target title="Release">
@@ -963,6 +963,9 @@
 		</Unit>
 		<Unit filename="../../../user_app/user_ble_notify/user_ble_notify.h" />
 		<Unit filename="../../../user_app/user_include.h" />
+		<Unit filename="../../../user_app/user_main.c">
+			<Option compilerVar="CC" />
+		</Unit>
 		<Unit filename="../../../user_app/ws2812-fx-lib/Adafruit_NeoPixel_C/Adafruit_NeoPixel.H" />
 		<Unit filename="../../../user_app/ws2812-fx-lib/Adafruit_NeoPixel_C/adafruit_typedef.h" />
 		<Unit filename="../../../user_app/ws2812-fx-lib/Adafruit_NeoPixel_C/neo_pixel.c">

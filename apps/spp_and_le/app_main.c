@@ -20,7 +20,7 @@
 #endif /* #if TCFG_KWS_VOICE_RECOGNITION_ENABLE */
 
 #define LOG_TAG_CONST APP
-#define LOG_TAG "[APP]"
+#define LOG_TAG       "[APP]"
 #define LOG_ERROR_ENABLE
 #define LOG_DEBUG_ENABLE
 #define LOG_INFO_ENABLE
@@ -28,11 +28,10 @@
 #define LOG_CLI_ENABLE
 #include "debug.h"
  
-// #include "../../../apps/user_app/one_wire/one_wire.h" 
-#include "../../../apps/user_app/led_strip/led_strip_sys.h"
-#include "../../../apps/user_app/led_strip/led_strand_effect.h"
-#include "../../../apps/user_app/ws2812-fx-lib/WS2812FX_C/ws2812fx_effect.h"
-#include "../../../apps/user_app/ws2812-fx-lib/WS2812FX_C/WS2812FX.h"
+#include "led_strip_sys.h"
+#include "led_strand_effect.h"
+#include "ws2812fx_effect.h"
+#include "WS2812FX.h"
 
 #include "rf24g_key.h"
 #include "user_include.h"
@@ -82,7 +81,7 @@ const struct task_info task_info_table[] = {
     {"hilink_task", 2, 0, 1024, 0}, // 定义线程 hilink任务调度
 #endif
 
-    {"led_task", 2, 0, 512, 512}, // 灯光
+    {"user_task", 2, 0, 512, 512}, //  
     {"msg_task", 3, 0, 256, 256}, // 用户消息处理线程
     // {"motor_task", 3, 0, 128, 128},
     {"usr_ble_task", 3, 0, 128, 128},
@@ -100,9 +99,7 @@ void app_var_init(void)
     app_var.poweroff_tone_v = 330;
 }
 
-__attribute__((weak))
-u8
-get_charge_online_flag(void)
+__attribute__((weak)) u8 get_charge_online_flag(void)
 {
     return 0;
 }
@@ -113,25 +110,20 @@ void check_power_on_key(void)
 #if TCFG_POWER_ON_NEED_KEY
 
     u32 delay_10ms_cnt = 0;
-    while (1)
-    {
+    while (1) {
         clr_wdt();
         os_time_dly(1);
 
         extern u8 get_power_on_status(void);
-        if (get_power_on_status())
-        {
+        if (get_power_on_status()) {
             log_info("+");
             delay_10ms_cnt++;
-            if (delay_10ms_cnt > 70)
-            {
+            if (delay_10ms_cnt > 70) {
                 /* extern void set_key_poweron_flag(u8 flag); */
                 /* set_key_poweron_flag(1); */
                 return;
             }
-        }
-        else
-        {
+        } else {
             log_info("-");
             delay_10ms_cnt = 0;
             log_info("enter softpoweroff\n");
@@ -145,8 +137,7 @@ void app_main()
 {
     struct intent it;
 
-    if (!UPDATE_SUPPORT_DEV_IS_NULL())
-    {
+    if (!UPDATE_SUPPORT_DEV_IS_NULL()) {
         int update = 0;
         update = update_result_deal();
     }
@@ -154,14 +145,11 @@ void app_main()
     printf(">>>>>>>>>>>>>>>>>app_main...\n");
     printf(">>> v220,2022-11-23 >>>\n");
 
-    if (get_charge_online_flag())
-    {
+    if (get_charge_online_flag()) {
 #if (TCFG_SYS_LVD_EN == 1)
         vbat_check_init();
 #endif
-    }
-    else
-    {
+    } else {
         check_power_on_voltage();
     }
 
@@ -239,8 +227,7 @@ void app_main()
     it.action = ACTION_FINDMY;
 
 #else
-    while (1)
-    {
+    while (1) {
         printf("no app!!!");
     }
 #endif
@@ -267,8 +254,7 @@ void app_switch(const char *name, int action)
 
     init_intent(&it);
     app = get_current_app();
-    if (app)
-    {
+    if (app) {
         /*
          * 退出当前app, 会执行state_machine()函数中APP_STA_STOP 和 APP_STA_DESTORY
          */
@@ -323,13 +309,13 @@ static const u16 timer_div[] = {
 };
 // #define APP_TIMER_CLK (CONFIG_BT_NORMAL_HZ / 2) // clk_get("timer")
 #define APP_TIMER_CLK (24000000) // clk_get("timer")
-#define MAX_TIME_CNT 0x7fff
-#define MIN_TIME_CNT 0x100
-#define TIMER_UNIT 1
+#define MAX_TIME_CNT  0x7fff
+#define MIN_TIME_CNT  0x100
+#define TIMER_UNIT    1
 
-#define TIMER_CON JL_TIMER2->CON
-#define TIMER_CNT JL_TIMER2->CNT
-#define TIMER_PRD JL_TIMER2->PRD
+#define TIMER_CON   JL_TIMER2->CON
+#define TIMER_CNT   JL_TIMER2->CNT
+#define TIMER_PRD   JL_TIMER2->PRD
 #define TIMER_VETOR IRQ_TIME2_IDX
 
 ___interrupt
@@ -375,7 +361,8 @@ void user_timer_init(void)
 #include "hardware.h"
 
 void main_while(void)
-{ 
+{
+#if 0
     while (1)
     {
         save_user_data_time_count_down();
@@ -397,8 +384,10 @@ void main_while(void)
 
         os_time_dly(1);
     }
+#endif
 }
- 
+
+#if 0
 /*
     处理用户消息的线程 user_msg_handle_task
 
@@ -409,8 +398,7 @@ void user_msg_handle_task(void)
 {
     int msg[32] = {0};
 
-    while (1)
-    {
+    while (1) {
 #if 1
         // os_sem_pend(msg, 0); // 一直阻塞等待信号量
         int ret = os_taskq_pend("msg_task", msg, 1);
@@ -432,24 +420,23 @@ void user_msg_handle_task(void)
         //     printf("msg [%u]: %d\n", (u16)i, msg[i]);
         // }
 
-        switch (msg[1])
-        {
-        // case MSG_SEQUENCER_ONE_WIRE_SEND_INFO: // 使能单线发送
-        // {
-        //     motor_send_data();
-        // }
-        // break;
+        switch (msg[1]) {
+            // case MSG_SEQUENCER_ONE_WIRE_SEND_INFO: // 使能单线发送
+            // {
+            //     motor_send_data();
+            // }
+            // break;
 
-        case MSG_USER_SAVE_INFO:
-        {
+        case MSG_USER_SAVE_INFO: {
             save_user_data_enable();
-        }
-        break;
+        } break;
         }
 #endif
     } // while (1)
 }
+#endif
 
+#if 0
 void WS2812_circle_task(void)
 {
     extern void meteor_period_sub(void);
@@ -462,6 +449,7 @@ void WS2812_circle_task(void)
 
     dot_runningh_handle();
 }
+#endif
 
 // void motor_task(void)
 // {
@@ -473,11 +461,12 @@ void WS2812_circle_task(void)
 //     }
 // }
 
+#if 0
+
 void ble_notify_task(void)
 {
-    while (1)
-    {
-        user_ble_notify_obj.param_handle();
+    while (1) {
+        user_ble_notify_param.param_handle();
         /*
             notify 需要一段时间才能发送，
             如果直接一次性修改发送，会导致旧数据被覆盖
@@ -485,9 +474,11 @@ void ble_notify_task(void)
         os_time_dly(1);
     }
 }
+#endif
 
 void my_main(void)
-{ 
+{
+#if 0
     mic_gpio_init();         // mic
     led_strip_driver_init(); //
 
@@ -496,14 +487,13 @@ void my_main(void)
     // 只在测试时使用
     // led_strip_rgb_schedule_init();
     // led_strip_white_schedule_init();
- 
-    WS2812FX_init(
-        (LED_STRIP_RGB_LEN + LED_STRIP_WHITE_LEN),
-         fc_effect.sequence);
+
+    WS2812FX_init((LED_STRIP_RGB_NUMS + LED_STRIP_WHITE_NUMS),
+                  fc_effect.sequence);
     WS2812FX_setBrightness(fc_effect.b);
     fc_effect.on_off_flag = DEVICE_ON;
- 
-    led_strip_rgb_schedule();  
+
+    led_strip_rgb_schedule();
     led_strip_white_schedule();
 
     sys_s_hi_timer_add(NULL, WS2812_circle_task, 10); // 10ms
@@ -514,4 +504,5 @@ void my_main(void)
         接收消息的线程没有创建，导致收不到消息，最后一上电电机会不工作
     */
     task_create(main_while, NULL, "led_task");
+#endif
 }

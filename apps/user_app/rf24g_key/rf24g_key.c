@@ -194,7 +194,8 @@ void rf24_key_handle(void)
     // 直接调用对应的处理函数，这样需要每个处理函数内都要判断一下设备是否开机
     rf24g_key_handle_func_ptr();
 
-    os_taskq_post("msg_task", 1, MSG_USER_SAVE_INFO);
+    // os_taskq_post("msg_task", 1, MSG_USER_SAVE_INFO);
+    user_data_save_enable();
 }
 
 // =============================================================================

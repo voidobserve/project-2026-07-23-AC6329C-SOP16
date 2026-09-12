@@ -3,4 +3,8 @@
 
 #include "user_config.h"
 
+void user_init(void); 
+
+void user_10ms_isr(void);
+
 #endif
