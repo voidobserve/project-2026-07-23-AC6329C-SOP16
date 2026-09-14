@@ -64,7 +64,8 @@ u16 led_strip_rgb_anim_fireworks(void);
 // ==================================================================
 // 声控模式：
 
-void music_open_close_set_trigger_len(u8 percent); // 设置声控开合模式的目标长度
+void music_open_close_set_trigger_len(u8 percent); // 设置声控开合模式的目标长度 
+
 u16 led_strip_rgb_anim_sound_control_star_random(void);
 u16 led_strip_rgb_anim_sound_control_star_white(void);
 u16 led_strip_rgb_anim_sound_control_star_blue(void);
@@ -74,6 +75,7 @@ uint16_t led_strip_rgb_anim_sound_control_feq_rise(void);
 uint16_t led_strip_rgb_anim_sound_control_feq_rise_bround_color(void);
 uint16_t led_strip_rgb_anim_sound_control_feq_rise_green_and_blue(void);
 uint16_t led_strip_rgb_anim_sound_control_multi_color_flow(void);
+uint16_t led_strip_rgb_anim_sound_control_meteor(void);
 
 uint16_t led_strip_rgb_anim_sound_control_rainbow_flash(void);
 void __led_strip_rgb_anim_sound_control_feq_rise_set__(u8 percent); 

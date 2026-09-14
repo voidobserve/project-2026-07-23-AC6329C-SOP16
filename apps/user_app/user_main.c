@@ -8,6 +8,8 @@
 #include "led_strip_rgb_schedule.h"
 #include "user_ble_notify.h"
 
+#include "user_rtc.h"
+
 extern void WS2812_circle_task(void);
 extern void user_main_task(void *p);
 
@@ -27,6 +29,8 @@ void user_init(void)
     sound_ctl_init();
     led_strip_driver_init();
 
+    user_rtc_init(); // 设置默认的rtc时间
+
     sys_s_hi_timer_add(NULL, user_10ms_isr, 10);
     sys_s_hi_timer_add(NULL, WS2812_circle_task, 10); // 10ms
     user_data_init();
@@ -43,6 +47,8 @@ void user_init(void)
 
 void user_main_task(void *p)
 {
+    u16 cnt = 0;
+
     while (1) {
         user_ble_notify_param_handle();
         user_data_save_handle();
@@ -54,4 +60,5 @@ void user_main_task(void *p)
 void user_10ms_isr(void)
 {
     user_data_save_time_10ms_isr();
+    user_rtc_handle();
 }

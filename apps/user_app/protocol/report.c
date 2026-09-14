@@ -129,7 +129,7 @@ void report_dev_type(u8 dev_type)
 void report_dev_on_off_state(u8 on_off_state)
 {
     uint8_t buf[10];
-    u8 len = 0; 
+    u8 len = 0;
 
     buf[len++] = 0x01;
     buf[len++] = 0x01;
@@ -154,34 +154,19 @@ void report_rgb_sequence(u8 sequence)
     user_ble_notify_param_put(buf, len);
 }
 
-void report_alarm_data(u8 alarm_index, alarm_t alarm_data)
+void report_alarm_info(u8 alarm_idx, user_alarm_t alarm_info)
 {
     uint8_t buf[10];
     u8 len = 0;
+    u8 tx_byte;
+    u8 i;
 
-    buf[len++] = 0x05;
-    switch (alarm_index) {
-    case 0:
-        // 闹钟 0
-        buf[len++] = 0x00;
-        break;
-    case 1:
-        // 闹钟 1
-        buf[len++] = 0x01;
-        break;
-    case 2:
-        // 闹钟 2
-        buf[len++] = 0x02;
-        break;
-    default:
-        return;
-        break;
-    }
-
-    buf[len++] = alarm_data.hour;
-    buf[len++] = alarm_data.minute;
-    buf[len++] = alarm_data.enable;
-    buf[len++] = alarm_data.mode;
+    buf[len++] = 0x05; 
+    buf[len++] = alarm_idx;
+    buf[len++] = alarm_info.hour;
+    buf[len++] = alarm_info.min;
+    buf[len++] = alarm_info.enable << 7;
+    buf[len++] = (alarm_info.power_on << 7) | (alarm_info.weekday);
 
     user_ble_notify_param_put(buf, len);
 }

@@ -750,16 +750,17 @@ void __led_strip_rgb_schedule_in_light_music__(void)
         mode = &led_strip_rgb_anim_sound_control_feq_rise_green_and_blue;
         break;
     case 9:
-  mode = &led_strip_rgb_anim_sound_control_energy;
+        mode = &led_strip_rgb_anim_sound_control_energy;
         break;
     case 10:
+        mode = &led_strip_rgb_anim_sound_control_multi_color_flow;
         break;
     case 11:
+        mode = &led_strip_rgb_anim_sound_control_meteor;
         break;
 
-        break;
     default:
-      
+        return;
         break;
     }
 

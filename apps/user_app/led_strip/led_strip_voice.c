@@ -287,17 +287,10 @@ void sound_handle(void)
 
             if (adc > adc_sum_avrg) {
                 u8 adc_percent = (adc - adc_sum_avrg) * fc_effect.music.s / adc;
-                if (fc_effect.Now_state == IS_light_music &&
-                    fc_effect.music.m == 2) {
-                    /*
-                        处于声控模式，并且正在跑
-                        led_strip_rgb_anim_sound_control_feq_rise 模式(动画)
-                    */
-                    __led_strip_rgb_anim_sound_control_feq_rise_set__(
-                        adc_percent);
-                }
 
                 if (fc_effect.Now_state == IS_light_music) {
+                    __led_strip_rgb_anim_sound_control_feq_rise_set__(
+                        adc_percent);
                     music_open_close_set_trigger_len(adc_percent);
                 }
             }

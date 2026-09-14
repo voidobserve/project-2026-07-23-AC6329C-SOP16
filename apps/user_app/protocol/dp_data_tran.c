@@ -17,9 +17,10 @@
 #include "user_ble_notify.h"
 #include "report.h"
 #include "app_msg_typedef.h"
-#include "alarm.h"
 #include "led_strip_white_schedule.h"
 #include "Adafruit_NeoPixel.h"
+
+#include "user_rtc.h"
 
 // 和通信协议对应
 const u8 rgb_sequence_map[6] = {
@@ -465,12 +466,14 @@ void parse_zd_data(unsigned char *LedCommand, u8 len)
 {
     if (LedCommand[0] == 0x01 && LedCommand[1] == 0x03) {
         // 收到了APP传过来的同步指令
+        user_alarm_t alarm[3];
+
         report_dev_type(0x01);                          // 0x01 灯具类型：RGB
         report_dev_on_off_state(fc_effect.on_off_flag); // 设备总开关状态
         report_brightness(fc_effect.app_b);
         report_speed(fc_effect.app_speed);
         report_led_strip_rgb_len(fc_effect.led_num);
-        report_sound_control_sensitivity(fc_effect.music.s);
+        report_sound_control_sensitivity(fc_effect.music.s); // 灵敏度
         report_meteor_period(fc_effect.meteor_period);
         report_rgb_sequence(fc_effect.sequence);
         report_sound_control_type(fc_effect.music.m_type);
@@ -479,9 +482,12 @@ void parse_zd_data(unsigned char *LedCommand, u8 len)
         // report_meteor_speed(led_strip_white.app_speed);
         // report_meteor_on_off_status(led_strip_white.is_dev_open);
 
-        // report_alarm_data(0, alarm[0]);
-        // report_alarm_data(1, alarm[1]);
-        // report_alarm_data(2, alarm[2]);
+        user_rtc_get_alarm_info(&alarm[0], 0);
+        user_rtc_get_alarm_info(&alarm[1], 1);
+        user_rtc_get_alarm_info(&alarm[2], 2);
+        report_alarm_info(0, alarm[0]);
+        report_alarm_info(1, alarm[1]);
+        report_alarm_info(2, alarm[2]);
     } else if (LedCommand[0] == 0x01 && LedCommand[1] == 0x01) {
         // 总开关
         u8 on_off_status = LedCommand[2];
@@ -497,8 +503,37 @@ void parse_zd_data(unsigned char *LedCommand, u8 len)
         // report_meteor_on_off_status(led_strip_white.is_dev_open);
     } else if (LedCommand[0] == 0x06 && LedCommand[1] == 0x02) {
         // 设置系统时间 小时-分钟-秒-星期
+        user_time_t cur_time;
+
+        cur_time.hour = LedCommand[2];
+        cur_time.min = LedCommand[3];
+        cur_time.sec = LedCommand[4];
+        cur_time.weekday = LedCommand[5];
+
+        printf("cur_time.hour == %u\n", (u16)cur_time.hour);
+        printf("cur_time.min == %u\n", (u16)cur_time.min);
+        printf("cur_time.sec == %u\n", (u16)cur_time.sec);
+        printf("cur_time.weekday == %u\n", (u16)cur_time.weekday);
+
+        user_rtc_set_time(&cur_time);
     } else if (LedCommand[0] == 0x05) {
         // 设置闹钟
+        u8 alarm_idx;
+        user_alarm_t alarm;
+
+        alarm_idx = LedCommand[1];
+
+        alarm.hour = LedCommand[2];
+        alarm.min = LedCommand[3];
+        alarm.sec = 0; // 通信协议中没有秒，默认为0
+
+        // byte 4，bit7 : 0-关闭闹钟，1-开启闹钟
+        alarm.enable = (LedCommand[4] >> 7);
+        // byte 5, bit 7, 0：关闭设备，1：开启设备
+        alarm.power_on = (LedCommand[5] >> 7);
+        alarm.weekday = LedCommand[5] & 0x7F;
+
+        user_rtc_set_alarm(&alarm, alarm_idx);
     }
 
     // if (fc_effect.on_off_flag)
@@ -841,136 +876,3 @@ void parse_led_strip_data(u8 *pBuf, u8 len)
     dp_extract_data_handle(pBuf); // 额外的数据包解析
     user_data_save_enable();
 }
-
-// void tuya_fb_sw_state(void)
-// {
-//     dp_data_header_t *p_dp;
-//     u8 dp_data[4 + 1];
-//     p_dp = (dp_data_header_t *)dp_data;
-//     p_dp->id = DPID_SWITCH_LED;
-//     p_dp->type = DP_TYPE_BOOL;
-//     p_dp->len = __SWP16(1);
-//     dp_data[4] = 1; // 默认开机
-// }
-
-/* -------------------------------------DPID_CONTROL_DATA 调节模式----------------------------- */
-
-// 调节(只下发)
-// 备注:类型：字符串;
-// Value: 011112222333344445555  ;
-// 0：   变化方式，0表示直接输出，1表示渐变;
-// 1111：H（色度：0-360，0X0000-0X0168）;
-// 2222：S (饱和：0-1000, 0X0000-0X03E8);
-// 3333：V (明度：0-1000，0X0000-0X03E8);
-// 4444：白光亮度（0-1000）;
-// 5555：色温值（0-1000）
-//  typedef struct
-//  {
-//      uint8_t change_type;        //变化方式，0表示直接输出，1表示渐变;
-//      hsv_t c;
-//      uint16_t white_b;        //白光亮度
-//      uint16_t ct;             //色温
-//  }dp_control_t; //DPID_CONTROL_DATA
-
-/* -------------------------------------DPID_SCENE_DATA 场景----------------------------- */
-
-// 场景(可下发可上报)
-// 备注:Value: 0011223344445555666677778888
-// 00：情景号
-// 11：单元切换间隔时间（0-100）
-// 22：单元变化时间（0-100）
-// 33：单元变化模式（0 静态 1 跳变 2 渐变）
-// 4444：H（色度：0-360，0X0000-0X0168）
-// 5555：S (饱和：0-1000, 0X0000-0X03E8)
-// 6666：V (明度：0-1000，0X0000-0X03E8)
-// 7777：白光亮度（0-1000）
-// 8888：色温值（0-1000）
-// 注：数字 1-8 的标号对应有多少单元就有多少组
-//  #pragma pack (1)
-//  typedef struct
-//  {
-//      uint8_t sw_time;            //单元切换间隔时间
-//      uint8_t chg_time;            //单元变化时间
-//      uint8_t change_type;        //单元变化模式（0 静态 1 跳变 2 渐变）
-//      hsv_t c;
-//      uint16_t white_b;           //白光亮度
-//      uint16_t ct;                //色温
-//  }dp_secene_data_t;                 //场景数据
-
-// typedef struct
-// {
-//     uint8_t secene_n;           //情景号
-//     dp_secene_data_t  *data;        //多组
-// }dp_secene_t;
-// #pragma pack ()
-/*
-typedef struct
-{
-    color_t c[MAX_CORLOR_N];               //颜色池
-    uint8_t s;                              //速度
-    uint8_t n;                             //当前颜色数量
-    uint8_t change_type;                   //变化模式（0 静态 1 跳变 2 渐变）
-}fc_effect_t;       //全彩效果
-
- */
-// void dp_secene_data_handle(u8 *pIn)
-// {
-//     dp_data_header_t *header = (dp_secene_t*) pIn;
-//     uint8_t len, i = 0;
-//     if(header->type != DP_TYPE_STRING)
-//     {
-//         #ifdef MY_DEBUG
-//         printf("\n dp_secene_data_handle type err");
-//         #endif
-//         return;
-//     }
-
-//     /* 提取涂鸦效果数据 */
-//     uint8_t secene_data[ sizeof(dp_data_header_t) * MAX_CORLOR_N + 1];
-
-//     len = string2hex(pIn + sizeof(dp_data_header_t), &secene_data, __SWP16(header->len));
-
-//     #ifdef MY_DEBUG
-//     printf("\n secene_data =");
-//     printf_buf(secene_data, len);
-//     #endif
-
-//     /* 提取颜色数量 */
-//     fc_effect.n = (len - 1) / sizeof(dp_secene_data_t);
-//     #ifdef MY_DEBUG
-//     printf("\n dp_secene_data_t =%d",sizeof(dp_secene_data_t));
-//     #endif
-//     /* 提取颜色 */
-//     dp_secene_data_t *pdata;
-//     pdata = (dp_secene_data_t *) (secene_data + 1); //第1个byte是情景号
-//     m_hsv_to_rgb(   &fc_effect.c[i].r, &fc_effect.c[i].g, &fc_effect.c[i].b, \
-//                     __SWP16(pdata->c.h_val), \
-//                     __SWP16(pdata->c.s_val), \
-//                     __SWP16(pdata->c.v_val));
-//     /* 提取速度 */
-//     fc_effect.s = pdata->chg_time;
-//     fc_effect.change_type = pdata->change_type;
-
-//     #ifdef MY_DEBUG
-//     printf("\n rgb =");
-//     printf_buf(fc_effect.c[i], 3);
-//     printf("\n fc_effect.n = %d",fc_effect.n);
-
-//     #endif
-//     i++;
-//     while(i < fc_effect.n)
-//     {
-
-//         pdata = (dp_secene_data_t *) (secene_data + 1 + sizeof(dp_secene_data_t) * i); //第1个byte是情景号
-//         m_hsv_to_rgb(   &fc_effect.c[i].r, &fc_effect.c[i].g, &fc_effect.c[i].b, \
-//                     __SWP16(pdata->c.h_val), \
-//                     __SWP16(pdata->c.s_val), \
-//                     __SWP16(pdata->c.v_val));
-
-//         #ifdef MY_DEBUG
-//         printf("\n rgb =");
-//         printf_buf(fc_effect.c[i], 3);
-//         #endif
-//         i++;
-//     }
-// }

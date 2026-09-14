@@ -143,7 +143,8 @@
 					<Add directory="../../../user_app" />
 					<Add directory="../../../../include_lib/btstack/le" />
 					<Add directory="../../../user_app/user_ble_notify" />
-					<Add directory="../../../user_app/alarm" />
+					<Add directory="../../../user_app/user_alarm" />
+					<Add directory="../../../../include_lib/driver/cpu/bd19/asm" />
 				</Compiler>
 				<Linker>
 					<Add option="-flto" />
@@ -891,9 +892,6 @@
 		<Unit filename="../../../common/update/update.c">
 			<Option compilerVar="CC" />
 		</Unit>
-		<Unit filename="../../../user_app/alarm/alarm.c">
-			<Option compilerVar="CC" />
-		</Unit>
 		<Unit filename="../../../user_app/hardware/hardware.c">
 			<Option compilerVar="CC" />
 		</Unit>
@@ -958,6 +956,10 @@
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="../../../user_app/save_flash/save_flash.h" />
+		<Unit filename="../../../user_app/user_alarm/user_alarm.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="../../../user_app/user_alarm/user_rtc.h" />
 		<Unit filename="../../../user_app/user_ble_notify/user_ble_notify.c">
 			<Option compilerVar="CC" />
 		</Unit>

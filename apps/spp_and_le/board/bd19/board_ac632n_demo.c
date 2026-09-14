@@ -40,7 +40,9 @@ const struct low_power_param power_param = {
     .lpctmu_en = TCFG_LP_TOUCH_KEY_ENABLE,
     .vd13_cap_en = TCFG_VD13_CAP_EN,
 #if TCFG_RTC_ALARM_ENABLE
-    .rtc_clk = 1,
+    // .rtc_clk = 1,
+    // .rtc_clk = CLK_SEL_32K, // 使用外部32K晶振的时钟
+    .rtc_clk = CLK_SEL_LRC, // 不带外部32K晶振，使用内部32K时钟
 #endif
 };
 
@@ -216,11 +218,11 @@ const struct sys_time def_alarm = {
     .sec = 0,
 };
 
-extern void alarm_isr_user_cbfun(u8 index);
+// extern void alarm_isr_user_cbfun(u8 index); // 示例，由用户自定义回调函数
 RTC_DEV_PLATFORM_DATA_BEGIN(rtc_data)
     .default_sys_time = &def_sys_time,
-   .default_alarm = &def_alarm,
-   .cbfun = NULL, // 闹钟中断的回调函数,用户自行定义
+    .default_alarm = &def_alarm,
+    .cbfun = NULL, // 闹钟中断的回调函数,用户自行定义
     /* .cbfun = alarm_isr_user_cbfun, */
     .clk_sel = CLK_SEL_LRC,
    .trim_t = 1, // 软关机情况下，1min唤醒一次trim lrc

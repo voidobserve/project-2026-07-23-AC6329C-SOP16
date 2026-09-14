@@ -1560,21 +1560,112 @@ uint16_t led_strip_rgb_anim_sound_control_energy(void)
     return (sp_en);
 }
 
+// 多颜色流动效果：
+// 颜色块持续向灯带尾部流动，同时不断有新的随机颜色从头部补进来；
+// 声控触发时流动加快，并且立即换入新的颜色。
+// 颜色块大小按灯带长度自适应（6 颗灯时为 2 颗灯一个颜色块）。
 uint16_t led_strip_rgb_anim_sound_control_multi_color_flow(void)
 {
-    uint8_t size = 5;
-    // uint8_t reverse;
-    uint16_t i;
+#if 1
+    /*
+        每个颜色块占用的灯珠数量：
+        6 颗灯时为 2 颗灯一个颜色块（共 3 个颜色块）。
+        想让颜色块更小/更大，修改这里的计算即可。
+    */
+    uint8_t size = _seg_len / 3;
+    uint8_t k;
+    uint16_t pos;
+    static volatile u8 is_triggered = 0;
+    static volatile u16 sp_en = 0;
+    static volatile u16 en_cnt = 0;
+    static u8 wheel_index = 0; /* 当前颜色块在色环上的位置 */
 
-    // reverse = _seg->options & WS2812FX_OPTION_REVERSE;
+    if (size < 1) {
+        size = 1;
+    } else if (size > 5) {
+        size = 5; /* 长灯带沿用原来的 5 颗灯一个颜色块 */
+    }
 
-    if (trg_en) {
+    /* 第一次进入本效果：用随机的颜色块铺满整条灯带 */
+    if (0 == _seg_rt->counter_mode_step) {
+        for (pos = 0; pos < _seg_len;) {
+            /* 随机取色，且与上一个颜色块在色环上至少相差 42，颜色分明 */
+            wheel_index = WS2812FX_get_random_wheel_index(wheel_index);
+            uint32_t color = WS2812FX_color_wheel(wheel_index);
+
+            for (k = 0; (k < size) && (pos < _seg_len); k++, pos++) {
+                WS2812FX_setPixelColor(_seg->start + pos, color);
+            }
+        }
+
+        _seg_rt->counter_mode_step = 1; /* 标记背景颜色已经构建完成 */
+        _seg_rt->aux_param3 = 0;        /* 下一步立即换入新的颜色 */
+        return (10);
+    }
+
+    if (__LED_STRIP_RGB_GET_SOUND_TRIGGER__() || is_triggered) {
+        // 有声控信号，设置为最快速度
         sp_en = 10;
+        is_triggered = 1;
+
+        // 声控触发的下一步立即换入新的颜色，让声控的变化更明显
+        _seg_rt->aux_param3 = 0;
+
         _seg_rt->aux_param++;
         if (_seg_rt->aux_param > 3) {
             //加速持续时间
             _seg_rt->aux_param = 0;
-            trg_en = 0;
+            is_triggered = 0;
+        }
+    } else {
+        sp_en = 500;
+    }
+
+    en_cnt += 10;
+    if (en_cnt >= sp_en) {
+        en_cnt = 0;
+
+        /*
+            整段颜色向尾部平移一格（一次 memmove 完成），再往头部补入新的颜色。
+
+            注意：这里必须用 copyPixels()，不能用 WS2812FX_move_forward()！
+            因为 move_forward() 是一个像素一个像素往前拷贝的循环，
+            每次拷贝的源就是上一次刚写过的像素，实际效果是
+            “把头部灯珠的颜色涂满整条灯带”，颜色块会被整个抹掉
+            （表现出来就是：只有第 1 颗灯变颜色，后面几颗灯都变成同一种颜色）。
+        */
+        WS2812FX_copyPixels(_seg->start + 1, _seg->start, _seg_len - 1);
+
+        /* 每流动 size 步换一种随机颜色，形成颜色块 */
+        if (0 == _seg_rt->aux_param3) {
+            wheel_index = WS2812FX_get_random_wheel_index(wheel_index);
+            _seg->colors[0] = WS2812FX_color_wheel(wheel_index);
+            _seg_rt->aux_param3 = size;
+        }
+        _seg_rt->aux_param3--;
+
+        /* 头部补入当前颜色块的颜色 */
+        WS2812FX_setPixelColor(_seg->start, _seg->colors[0]);
+    }
+
+    return 10;
+
+#else
+    uint8_t size = 5;
+    uint8_t j;
+    // u8 reverse;
+    static u16 en_cnt = 0;
+    static u16 sp_en = 0;
+    static u8 is_triggered = 0;
+
+    if (is_triggered || __LED_STRIP_RGB_GET_SOUND_TRIGGER__()) {
+        is_triggered = 1;
+        sp_en = 10;
+        _seg_rt->aux_param++;
+        if (_seg_rt->aux_param > 3) {
+            // 控制加速持续时间
+            _seg_rt->aux_param = 0;
+            is_triggered = 0;
         }
     } else {
         sp_en = 500;
@@ -1589,9 +1680,9 @@ uint16_t led_strip_rgb_anim_sound_control_multi_color_flow(void)
             while (_seg_rt->counter_mode_step <= _seg->stop) {
                 _seg->colors[0] = WS2812FX_color_wheel(
                     WS2812FX_get_random_wheel_index(WS2812FX_random8()));
-                for (i = 0;
-                     (i < size) && (_seg_rt->counter_mode_step <= _seg->stop);
-                     i++) {
+                for (j = 0;
+                     (j < size) && (_seg_rt->counter_mode_step <= _seg->stop);
+                     j++) {
                     WS2812FX_setPixelColor(_seg->start +
                                                _seg_rt->counter_mode_step,
                                            _seg->colors[0]);
@@ -1599,9 +1690,9 @@ uint16_t led_strip_rgb_anim_sound_control_multi_color_flow(void)
                 }
             }
         } else {
-            // 目前没有途径进入反向的情况
-            // if (reverse) {
-            //     //反向流水
+
+            // if (reverse) //反向流水
+            // {
             //     WS2812FX_move_reverse(_seg->start, _seg->stop);
             // } else {
             WS2812FX_move_forward(_seg->start, _seg->stop);
@@ -1610,6 +1701,40 @@ uint16_t led_strip_rgb_anim_sound_control_multi_color_flow(void)
     }
 
     return 10;
+#endif
+}
+
+uint16_t led_strip_rgb_anim_sound_control_meteor(void)
+{
+    const u8 max_rate = 17;
+    static uint8_t i = 0;
+    uint32_t r1, g1, b1, w1;
+    const uint8_t rate[max_rate] = {100, 75, 45, 30, 20, 15, 10, 7, 5,
+                                    3,   2,  0,  0,  0,  0,  0,  0};
+    int w = (_seg->colors[0] >> 24) & 0xff;
+    int r = (_seg->colors[0] >> 16) & 0xff;
+    int g = (_seg->colors[0] >> 8) & 0xff;
+    int b = _seg->colors[0] & 0xff;
+    if (__LED_STRIP_RGB_GET_SOUND_TRIGGER__()) {
+        _seg->colors[0] = WS2812FX_color_wheel(_seg_rt->counter_mode_step);
+        _seg_rt->counter_mode_step = _seg_rt->counter_mode_step + 33 & 0xff;
+        if (i == max_rate - 1) {
+            i = 0;
+        }
+    }
+
+    WS2812FX_copyPixels(_seg->start + 1, _seg->start, _seg_len - 1);
+    r1 = r * rate[i] / 100;
+    g1 = g * rate[i] / 100;
+    b1 = b * rate[i] / 100;
+    w1 = w * rate[i] / 100;
+    WS2812FX_setPixelColor_rgbw(_seg->start, r1, g1, b1, w1);
+
+    if (i < max_rate - 1) {
+        i++;
+    }
+
+    return (30);
 }
 
 // RGB 关闭时，对应的动画
