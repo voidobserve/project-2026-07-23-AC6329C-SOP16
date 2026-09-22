@@ -1,0 +1,7 @@
+flowchart TD
+    A["APP 指令 7F FF<br/>mode_idx / dir / speed / bright<br/>seg_size / seg_num / bg[3] / color_num / colors[]"] --> B["app_msg_color_light_handle()<br/>解析为 app_msg_anim_info_t"]
+    B --> C["led_strip_rgb_app_msg_handle_task<br/>LED 应用任务"]
+    C --> D["新增映射层<br/>app 场景 -&gt; fc_effect.dream_scene"]
+    D --> E["led_strip_rgb_schedule()<br/>按 Now_state / change_type 分派"]
+    E --> F["led_strip_rgb_schedule_set_mode()<br/>写 segment: colors[8] / c_n / speed / options"]
+    F --> G["led_strip_rgb_anim_*()<br/>每 10ms 被 WS2812FX_service 调用"]

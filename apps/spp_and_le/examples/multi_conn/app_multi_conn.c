@@ -92,12 +92,7 @@ static void multi_app_start()
     btstack_init();
 
 #endif
-
-    // 移植的旧版本的接口
-    // extern void my_main(void); 
-    // my_main();
-
-    // 目前使用的新接口
+  
     user_init();
 
     /* 按键消息使能 */

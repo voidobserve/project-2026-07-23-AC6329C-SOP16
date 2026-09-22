@@ -7,6 +7,8 @@
 #include "ws2812fx_effect.h"
 #include "user_include.h"
 
+#include "os_cpu.h"
+
 void led_strip_rgb_strand_rainbow_handler(void);
 void led_strip_rgb_multi_jump_handler(void); // 多种颜色跳变
 void led_strip_rgb_strand_breath_handler(void);
@@ -837,6 +839,8 @@ void meteor_period_sub(void)
  */
 void led_strip_rgb_schedule_set_mode(mode_ptr mode, u16 speed, u8 option)
 {
+    // WS2812FX_service 在10ms中断内调用，要包住临界区
+    OS_ENTER_CRITICAL();
     WS2812FX_setSegment_colorOptions(
         LED_STRIP_RGB_SEG_INDEX,                           // 第0段
         LED_STRIP_RGB_STAR_INDEX,                          // 起始位置
@@ -852,6 +856,7 @@ void led_strip_rgb_schedule_set_mode(mode_ptr mode, u16 speed, u8 option)
     WS2812FX_resetSegmentRuntime(
         LED_STRIP_RGB_SEG_INDEX); // 清除指定段的显示缓存
     WS2812FX_running_flag_set();
+    OS_EXIT_CRITICAL();
 }
 
 // 多点跑动的集合效果

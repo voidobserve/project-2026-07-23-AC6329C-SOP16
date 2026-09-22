@@ -1,20 +1,11 @@
-#include "report.h"
+#include "user_ble_notify_app.h"
 #include "user_ble_notify.h"
 
 #include "led_strand_effect.h" // ALARM_CLOCK 类型定义
 #include "user_config.h"
 
-/*
-	USER_TO_DO 给app反馈数据的接口，可以优化成以下形式：
-	可以额外参考 app_msg_typedef.c 和 app_msg_typedef.h 中的程序
-*/
-void report_msg(u8 msg_type, u8 msg_data)
-{
-    // 根据数据类型，查表
-}
-
 // 向app反馈声控类型：手机麦或者设备麦
-void report_sound_control_type(u8 type)
+void user_ble_notify_sound_control_type(u8 type)
 {
     uint8_t buf[10];
     u8 len = 0;
@@ -26,7 +17,7 @@ void report_sound_control_type(u8 type)
     user_ble_notify_param_put(buf, len);
 }
 
-void report_brightness(u8 brightness)
+void user_ble_notify_brightness(u8 brightness)
 {
     uint8_t buf[10];
     u8 len = 0;
@@ -38,7 +29,7 @@ void report_brightness(u8 brightness)
     user_ble_notify_param_put(buf, len);
 }
 
-void report_speed(u8 speed)
+void user_ble_notify_speed(u8 speed)
 {
     uint8_t buf[10];
     u8 len = 0;
@@ -50,19 +41,19 @@ void report_speed(u8 speed)
     user_ble_notify_param_put(buf, len);
 }
 
-void report_meteor_on_off_status(u8 on_off_status)
+void user_ble_notify_meteor_pwr_sta(u8 pwr_sta)
 {
     uint8_t buf[10];
     u8 len = 0;
 
     buf[len++] = 0x2F;
     buf[len++] = 0x02;
-    buf[len++] = on_off_status;
+    buf[len++] = pwr_sta;
 
     user_ble_notify_param_put(buf, len);
 }
 
-void report_meteor_period(u8 period)
+void user_ble_notify_meteor_period(u8 period)
 {
     uint8_t buf[10];
     u8 len = 0;
@@ -74,7 +65,7 @@ void report_meteor_period(u8 period)
     user_ble_notify_param_put(buf, len);
 }
 
-void report_meteor_speed(u8 speed)
+void user_ble_notify_meteor_speed(u8 speed)
 {
     uint8_t buf[10];
     u8 len = 0;
@@ -86,7 +77,7 @@ void report_meteor_speed(u8 speed)
     user_ble_notify_param_put(buf, len);
 }
 
-void report_sound_control_sensitivity(u8 sensitivity)
+void user_ble_notify_sound_control_sensitivity(u8 sensitivity)
 {
     uint8_t buf[10];
     u8 len = 0;
@@ -99,7 +90,7 @@ void report_sound_control_sensitivity(u8 sensitivity)
 }
 
 // 反馈 RGB 灯带的长度(灯珠数量)
-void report_led_strip_rgb_len(u16 nums)
+void user_ble_notify_led_strip_rgb_len(u16 nums)
 {
     uint8_t buf[10];
     u8 len = 0;
@@ -113,7 +104,7 @@ void report_led_strip_rgb_len(u16 nums)
 }
 
 // 反馈设备类型
-void report_dev_type(u8 dev_type)
+void user_ble_notify_dev_type(u8 dev_type)
 {
     uint8_t buf[10];
     u8 len = 0;
@@ -126,23 +117,23 @@ void report_dev_type(u8 dev_type)
     user_ble_notify_param_put(buf, len);
 }
 
-void report_dev_on_off_state(u8 on_off_state)
+void user_ble_notify_dev_pwr_sta(u8 pwr_sta)
 {
     uint8_t buf[10];
     u8 len = 0;
 
     buf[len++] = 0x01;
     buf[len++] = 0x01;
-    buf[len++] = on_off_state;
+    buf[len++] = pwr_sta;
 
     user_ble_notify_param_put(buf, len);
 
 #if USER_DEBUG_ENABLE
-    printf("on_off_state == %u\n", on_off_state);
+    printf("pwr_sta == %u\n", pwr_sta);
 #endif
 }
 
-void report_rgb_sequence(u8 sequence)
+void user_ble_notify_rgb_sequence(u8 sequence)
 {
     uint8_t buf[10];
     u8 len = 0;
@@ -154,14 +145,14 @@ void report_rgb_sequence(u8 sequence)
     user_ble_notify_param_put(buf, len);
 }
 
-void report_alarm_info(u8 alarm_idx, user_alarm_t alarm_info)
+void user_ble_notify_alarm_info(u8 alarm_idx, user_alarm_t alarm_info)
 {
     uint8_t buf[10];
     u8 len = 0;
     u8 tx_byte;
     u8 i;
 
-    buf[len++] = 0x05; 
+    buf[len++] = 0x05;
     buf[len++] = alarm_idx;
     buf[len++] = alarm_info.hour;
     buf[len++] = alarm_info.min;
@@ -172,7 +163,7 @@ void report_alarm_info(u8 alarm_idx, user_alarm_t alarm_info)
 }
 
 // 反馈声控模式对应的子模式
-void report_sound_control_mode(u8 mode)
+void user_ble_notify_sound_control_mode(u8 mode)
 {
     uint8_t buf[10];
     u8 len = 0;

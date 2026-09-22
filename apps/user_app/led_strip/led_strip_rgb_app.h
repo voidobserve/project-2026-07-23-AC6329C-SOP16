@@ -10,4 +10,8 @@ void led_strip_rgb_set_speed(u8 speed_percent);
 void led_strip_rgb_set_static_color(u32 color);
 void led_strip_rgb_set_static_color_by_structure(color_t color_structure);
 
+
+void led_strip_rgb_app_msg_handle_task(void *p);
+
+
 #endif

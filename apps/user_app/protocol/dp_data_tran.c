@@ -15,15 +15,17 @@
 #include "user_include.h"
 #include "led_strand_effect.h"
 #include "user_ble_notify.h"
-#include "report.h"
+#include "user_ble_notify_app.h"
 #include "app_msg_typedef.h"
 #include "led_strip_white_schedule.h"
 #include "Adafruit_NeoPixel.h"
 
 #include "user_rtc.h"
 
+#if 0
+
 // 和通信协议对应
-const u8 rgb_sequence_map[6] = {
+static const u8 rgb_sequence_map[6] = {
     NEO_RGB, NEO_RBG, NEO_GRB, NEO_GBR, NEO_BRG, NEO_BGR,
 };
 
@@ -35,6 +37,8 @@ dp_music_data_t dp_music_data;   // DPID_MUSIC_DATA音乐灯
 // dp_secene_data_t  dp_secene_data;  //DPID_RGBIC_LINERLIGHT_SCENE炫彩情景
 dp_lednum_set_t dp_lednum_set; // DPID_LED_NUMBER_SET led点数设置
 dp_draw_tool_t dp_draw_tool;   // DPID_DRAW_TOOL 涂抹功能
+
+
 
 /************************************************************************************
  *@  函数：string_hex_Byte
@@ -154,13 +158,15 @@ void dp_extract_data_handle(unsigned char *buff)
         break;
 
     case DPID_RGBIC_LINERLIGHT_SCENE: // 炫彩情景(可下发可上报)
+        // byte[0] == 0x38
+
         fc_effect.Now_state = IS_light_scene;
 
         // 变化类型、模式
         fc_effect.dream_scene.change_type = buff[4];
         // 方向
         fc_effect.dream_scene.direction = buff[5];
-        // 段大小
+        // 段大小(多少个灯为一组)
         fc_effect.dream_scene.seg_size = buff[6];
         // 颜色数量
         fc_effect.dream_scene.c_n = buff[7];
@@ -184,12 +190,15 @@ void dp_extract_data_handle(unsigned char *buff)
                (u16)fc_effect.dream_scene.seg_size);
 #endif
 
+        // REVIEW
         // 包含多段不同颜色的跳变模式和渐变模式，由于RGB灯串一共只有6个灯，这里将颜色段设置为1
         if ((fc_effect.dream_scene.change_type == 0x02 ||
              fc_effect.dream_scene.change_type == 0x0A) &&
             fc_effect.dream_scene.seg_size == 0x05) {
             fc_effect.dream_scene.seg_size = 1;
         }
+
+        // 只在测试时使用
         // else if (fc_effect.dream_scene.change_type == 0x0B && // 呼吸模式
         //          fc_effect.dream_scene.c_n == 0x07)           // 呼吸模式、7种颜色 -> 炫彩呼吸
         // {
@@ -461,33 +470,35 @@ void fb_motor_mode(void)
     tp_buffer[len++] = fc_effect.base_ins.mode;
     zd_fb_2_app(tp_buffer, len);
 }
+#endif
 
+#if 0
 void parse_zd_data(unsigned char *LedCommand, u8 len)
 {
     if (LedCommand[0] == 0x01 && LedCommand[1] == 0x03) {
         // 收到了APP传过来的同步指令
         user_alarm_t alarm[3];
 
-        report_dev_type(0x01);                          // 0x01 灯具类型：RGB
-        report_dev_on_off_state(fc_effect.on_off_flag); // 设备总开关状态
-        report_brightness(fc_effect.app_b);
-        report_speed(fc_effect.app_speed);
-        report_led_strip_rgb_len(fc_effect.led_num);
-        report_sound_control_sensitivity(fc_effect.music.s); // 灵敏度
-        report_meteor_period(fc_effect.meteor_period);
-        report_rgb_sequence(fc_effect.sequence);
-        report_sound_control_type(fc_effect.music.m_type);
-        report_sound_control_mode(fc_effect.music.m);
+        user_ble_notify_dev_type(0x01);                          // 0x01 灯具类型：RGB
+        user_ble_notify_dev_pwr_sta(fc_effect.on_off_flag); // 设备总开关状态
+        user_ble_notify_brightness(fc_effect.app_b);
+        user_ble_notify_speed(fc_effect.app_speed);
+        user_ble_notify_led_strip_rgb_len(fc_effect.led_num);
+        user_ble_notify_sound_control_sensitivity(fc_effect.music.s); // 灵敏度
+        user_ble_notify_meteor_period(fc_effect.meteor_period);
+        user_ble_notify_rgb_sequence(fc_effect.sequence);
+        user_ble_notify_sound_control_type(fc_effect.music.m_type);
+        user_ble_notify_sound_control_mode(fc_effect.music.m);
 
-        // report_meteor_speed(led_strip_white.app_speed);
-        // report_meteor_on_off_status(led_strip_white.is_dev_open);
+        // user_ble_notify_meteor_speed(led_strip_white.app_speed);
+        // user_ble_notify_meteor_pwr_sta(led_strip_white.is_dev_open);
 
         user_rtc_get_alarm_info(&alarm[0], 0);
         user_rtc_get_alarm_info(&alarm[1], 1);
         user_rtc_get_alarm_info(&alarm[2], 2);
-        report_alarm_info(0, alarm[0]);
-        report_alarm_info(1, alarm[1]);
-        report_alarm_info(2, alarm[2]);
+        user_ble_notify_alarm_info(0, alarm[0]);
+        user_ble_notify_alarm_info(1, alarm[1]);
+        user_ble_notify_alarm_info(2, alarm[2]);
     } else if (LedCommand[0] == 0x01 && LedCommand[1] == 0x01) {
         // 总开关
         u8 on_off_status = LedCommand[2];
@@ -499,8 +510,8 @@ void parse_zd_data(unsigned char *LedCommand, u8 len)
         led_strip_rgb_schedule();
         // led_strip_white_schedule();
 
-        report_dev_on_off_state(on_off_status);
-        // report_meteor_on_off_status(led_strip_white.is_dev_open);
+        user_ble_notify_dev_pwr_sta(on_off_status);
+        // user_ble_notify_meteor_pwr_sta(led_strip_white.is_dev_open);
     } else if (LedCommand[0] == 0x06 && LedCommand[1] == 0x02) {
         // 设置系统时间 小时-分钟-秒-星期
         user_time_t cur_time;
@@ -750,7 +761,7 @@ void parse_zd_data(unsigned char *LedCommand, u8 len)
         fc_effect.b = (u16)percent * (255 - 25) / 100 + 25;
         WS2812FX_setBrightness(fc_effect.b);
 
-        report_brightness(fc_effect.app_b);
+        user_ble_notify_brightness(fc_effect.app_b);
     } else if (LedCommand[0] == 0x04 && LedCommand[1] == 0x04) {
         // 调节速度
         u8 speed = LedCommand[2];
@@ -762,7 +773,7 @@ void parse_zd_data(unsigned char *LedCommand, u8 len)
         }
 
         led_strip_rgb_schedule();
-        report_speed(fc_effect.app_speed);
+        user_ble_notify_speed(fc_effect.app_speed);
     } else if (LedCommand[0] == 0x04 && LedCommand[1] == 0x05) {
         // 更改RGB接口
         u8 sequence = LedCommand[2];
@@ -788,20 +799,20 @@ void parse_zd_data(unsigned char *LedCommand, u8 len)
 
         led_strip_rgb_schedule(); // 重新开始跑动画
 
-        report_led_strip_rgb_len(fc_effect.led_num);
+        user_ble_notify_led_strip_rgb_len(fc_effect.led_num);
     } else if (LedCommand[0] == 0x06 && LedCommand[1] == 0x06) {
         // 外麦声控模式
 
         fc_effect.music.m = LedCommand[2];
         fc_effect.Now_state = IS_light_music;
         led_strip_rgb_schedule();
-        report_sound_control_mode(fc_effect.music.m);
+        user_ble_notify_sound_control_mode(fc_effect.music.m);
     } else if (LedCommand[0] == 0x2F && LedCommand[1] == 0x05) {
         // 设置灵敏度
         u8 sensitivity = LedCommand[2];
         fc_effect.music.s = sensitivity;
         led_strip_white.sensitivity = sensitivity;
-        report_sound_control_sensitivity(fc_effect.music.s);
+        user_ble_notify_sound_control_sensitivity(fc_effect.music.s);
     } else if (LedCommand[0] == 0x06 && LedCommand[1] == 0x04) {
         // 手机音乐律动
         set_static_mode(LedCommand[2], LedCommand[3], LedCommand[4]);
@@ -835,7 +846,7 @@ void parse_zd_data(unsigned char *LedCommand, u8 len)
         // printf("led_strip_white.speed == %u\n", (u16)led_strip_white.speed);
 #endif
         led_strip_white_schedule();
-        report_meteor_speed(led_strip_white.app_speed);
+        user_ble_notify_meteor_speed(led_strip_white.app_speed);
     } else if (LedCommand[0] == 0x2F && LedCommand[1] == 0x02) {
         // 流星灯开关
         u8 on_off = LedCommand[2];
@@ -846,7 +857,7 @@ void parse_zd_data(unsigned char *LedCommand, u8 len)
         }
 
         led_strip_white_schedule();
-        report_meteor_on_off_status(led_strip_white.is_dev_open);
+        user_ble_notify_meteor_pwr_sta(led_strip_white.is_dev_open);
     } else if (LedCommand[0] == 0x2F && LedCommand[1] == 0x03) {
         // 流星周期(时间间隔)
         u8 period = LedCommand[2];
@@ -859,11 +870,11 @@ void parse_zd_data(unsigned char *LedCommand, u8 len)
             led_strip_white.period_cnt = (u16)led_strip_white.period * 1000;
         }
 
-        report_meteor_period(fc_effect.meteor_period);
+        user_ble_notify_meteor_period(fc_effect.meteor_period);
     } else if (LedCommand[0] == 0x06 && LedCommand[1] == 0x07) {
         // 设置为手机麦或者外麦
         fc_effect.music.m_type = LedCommand[2];
-        report_sound_control_type(fc_effect.music.m_type);
+        user_ble_notify_sound_control_type(fc_effect.music.m_type);
     }
     // }
 }
@@ -876,3 +887,4 @@ void parse_led_strip_data(u8 *pBuf, u8 len)
     dp_extract_data_handle(pBuf); // 额外的数据包解析
     user_data_save_enable();
 }
+#endif

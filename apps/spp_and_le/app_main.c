@@ -27,7 +27,7 @@
 /* #define LOG_DUMP_ENABLE */
 #define LOG_CLI_ENABLE
 #include "debug.h"
- 
+
 #include "led_strip_sys.h"
 #include "led_strand_effect.h"
 #include "ws2812fx_effect.h"
@@ -81,10 +81,10 @@ const struct task_info task_info_table[] = {
     {"hilink_task", 2, 0, 1024, 0}, // 定义线程 hilink任务调度
 #endif
 
-    {"user_task", 2, 0, 512, 512}, //  
-    {"msg_task", 3, 0, 256, 256}, // 用户消息处理线程
-    // {"motor_task", 3, 0, 128, 128},
+    {"user_task", 2, 0, 512, 512}, //
+    // {"msg_task", 3, 0, 256, 256}, // 用户消息处理线程
     {"usr_ble_task", 3, 0, 128, 128},
+    {"app_msg_handle", 3, 0, 128, 128},
     {0, 0},
 };
 
@@ -356,153 +356,3 @@ void user_timer_init(void)
 // __initcall(user_timer_init);
 
 #endif
-
-#include "led_strip_driver.h"
-#include "hardware.h"
-
-void main_while(void)
-{
-#if 0
-    while (1)
-    {
-        save_user_data_time_count_down();
-        save_user_data_handle();
-
-        rf24_key_handle();
-
-
-        // 测试主循环执行时间
-        // {
-        //     static u16 cnt = 0;
-        //     cnt++;
-        //     if (cnt >= 100)
-        //     {
-        //         cnt = 0;
-        //         printf("main circle\n"); // 主循环约10ms
-        //     }
-        // }
-
-        os_time_dly(1);
-    }
-#endif
-}
-
-#if 0
-/*
-    处理用户消息的线程 user_msg_handle_task
-
-    给该线程发送消息，例如：
-    os_taskq_post("msg_task", 1, MSG_SEQUENCER_ONE_WIRE_SEND_INFO);
-*/
-void user_msg_handle_task(void)
-{
-    int msg[32] = {0};
-
-    while (1) {
-#if 1
-        // os_sem_pend(msg, 0); // 一直阻塞等待信号量
-        int ret = os_taskq_pend("msg_task", msg, 1);
-        // printf("recv msg\n");
-        // printf("ret %d\n", ret);
-        if (OS_TASKQ != ret) // 类型不对
-        {
-            continue;
-        }
-
-        if (msg[0] != Q_USER) // 不是用户消息
-        {
-            continue;
-        }
-
-        // 打印接收到的消息
-        // for (u8 i =0; i < ARRAY_SIZE(msg); i++)
-        // {
-        //     printf("msg [%u]: %d\n", (u16)i, msg[i]);
-        // }
-
-        switch (msg[1]) {
-            // case MSG_SEQUENCER_ONE_WIRE_SEND_INFO: // 使能单线发送
-            // {
-            //     motor_send_data();
-            // }
-            // break;
-
-        case MSG_USER_SAVE_INFO: {
-            save_user_data_enable();
-        } break;
-        }
-#endif
-    } // while (1)
-}
-#endif
-
-#if 0
-void WS2812_circle_task(void)
-{
-    extern void meteor_period_sub(void);
-    meteor_period_sub();
-
-    sound_handle();
-    run_tick_per_10ms();
-    WS2812FX_service();
-    // printf("WS2812_circle_task\n");
-
-    dot_runningh_handle();
-}
-#endif
-
-// void motor_task(void)
-// {
-//     while (1)
-//     {
-//         motor_forward_reverse_mode_handle();
-//         motor_music_rulation_mode_handle();
-//         os_time_dly(1);
-//     }
-// }
-
-#if 0
-
-void ble_notify_task(void)
-{
-    while (1) {
-        user_ble_notify_param.param_handle();
-        /*
-            notify 需要一段时间才能发送，
-            如果直接一次性修改发送，会导致旧数据被覆盖
-        */
-        os_time_dly(1);
-    }
-}
-#endif
-
-void my_main(void)
-{
-#if 0
-    mic_gpio_init();         // mic
-    led_strip_driver_init(); //
-
-    read_flash_device_status_init();
-
-    // 只在测试时使用
-    // led_strip_rgb_schedule_init();
-    // led_strip_white_schedule_init();
-
-    WS2812FX_init((LED_STRIP_RGB_NUMS + LED_STRIP_WHITE_NUMS),
-                  fc_effect.sequence);
-    WS2812FX_setBrightness(fc_effect.b);
-    fc_effect.on_off_flag = DEVICE_ON;
-
-    led_strip_rgb_schedule();
-    led_strip_white_schedule();
-
-    sys_s_hi_timer_add(NULL, WS2812_circle_task, 10); // 10ms
-    task_create(ble_notify_task, NULL, "usr_ble_task");
-    task_create(user_msg_handle_task, NULL, "msg_task");
-    /*
-        这里要放到最后，防止调用 soft_turn_on_the_light() 给线程发送消息时，
-        接收消息的线程没有创建，导致收不到消息，最后一上电电机会不工作
-    */
-    task_create(main_while, NULL, "led_task");
-#endif
-}

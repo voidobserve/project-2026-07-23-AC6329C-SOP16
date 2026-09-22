@@ -51,11 +51,13 @@
                 "__Q32S__"
             ],
             "includePath": [
+                "${workspaceFolder}/**",
                 "${workspaceFolder}/include_lib",
                 "${workspaceFolder}/include_lib/driver",
                 "${workspaceFolder}/include_lib/driver/device",
                 "${workspaceFolder}/include_lib/driver/cpu/bd19",
                 "${workspaceFolder}/include_lib/system",
+                "${workspaceFolder}/include_lib/system/os",
                 "${workspaceFolder}/include_lib/system/generic",
                 "${workspaceFolder}/include_lib/system/device",
                 "${workspaceFolder}/include_lib/system/fs",
@@ -112,7 +114,8 @@
                 "${workspaceFolder}/apps/common/device/usb",
                 "${workspaceFolder}/apps/common/device/usb/device",
                 "${workspaceFolder}/apps/common/device/usb/host",
-                "${workspaceFolder}/**",
+                "${workspaceFolder}/apps/common/user_app/protocol",
+          
                 "C:/JL/pi32/q32s-include"
             ],
             "intelliSenseMode": "clang-x86",

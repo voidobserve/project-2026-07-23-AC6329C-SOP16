@@ -33,6 +33,8 @@
 #include "ble_multi.h"
 #include "ble_multi_profile.h"
 
+#include "app_msg_handle.h"
+
 #if CONFIG_APP_MULTI && CONFIG_BT_GATT_SERVER_NUM
 
 #if LE_DEBUG_PRINT_EN
@@ -430,8 +432,15 @@ static int multi_att_write_callback(hci_con_handle_t connection_handle,
     case ATT_CHARACTERISTIC_fff1_01_VALUE_HANDLE:
         log_info("\n-fff1_rx(%d):", buffer_size);
         printf_buf(buffer, buffer_size);
-        extern void parse_led_strip_data(u8 * pBuf, u8 len);
-        parse_led_strip_data(buffer, buffer_size);
+        // extern void parse_led_strip_data(u8 * pBuf, u8 len);
+        // parse_led_strip_data(buffer, buffer_size);
+
+        /*
+            只把指令投递到 app_msg_handle 任务，
+            指令的解析和执行都由 app_msg_handle 任务完成，
+            避免耗时操作长时间占用蓝牙写回调
+        */
+        app_msg_post(buffer, buffer_size);
         break;
 
         //>>>>>>>>>>>>>>>>>>>>>>>>>   <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -543,7 +552,7 @@ static int multi_make_set_adv_data(void)
 
     // 广播头
     u8 index = 0;
-    u8 info[14]; // 客户机型数据
+    u8 info[20]; // 客户机型数据
     // REVIEW 还不确定使用哪个广播头
 
     // 顶棚灯使用的广播头
@@ -557,13 +566,23 @@ static int multi_make_set_adv_data(void)
     // info[index++] = 0x05;
 
     // TEST_ONLY 测试时使用ilamp对应的广播头
+    // info[index++] = 'Z';
+    // info[index++] = 'D';
+    // info[index++] = 0x48;
+    // info[index++] = 0x43;
+    // info[index++] = 0x00;
+    // info[index++] = 0x00;
+    // info[index++] = 0x01;
+
+    // 最终使用的广播头
     info[index++] = 'Z';
     info[index++] = 'D';
-    info[index++] = 0x48;
-    info[index++] = 0x43;
-    info[index++] = 0x00;
-    info[index++] = 0x00;
-    info[index++] = 0x01;
+    info[index++] = 0x00; //
+    info[index++] = 0x02; //
+    info[index++] = 0x01; //
+    info[index++] = 0xE9; //
+    info[index++] = 0x00; //
+    info[index++] = 0x00; //
 
     le_controller_get_mac(&info[index]); // 获取ble的蓝牙public地址
     offset += make_eir_packet_data(&buf[offset], offset,

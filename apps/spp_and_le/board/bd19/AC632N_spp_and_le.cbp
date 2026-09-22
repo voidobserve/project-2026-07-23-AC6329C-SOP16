@@ -143,8 +143,10 @@
 					<Add directory="../../../user_app" />
 					<Add directory="../../../../include_lib/btstack/le" />
 					<Add directory="../../../user_app/user_ble_notify" />
-					<Add directory="../../../user_app/user_alarm" />
 					<Add directory="../../../../include_lib/driver/cpu/bd19/asm" />
+					<Add directory="../../../user_app/user_rtc" />
+					<Add directory="../../../user_app/user_thread_communication" />
+					<Add directory="../../../../include_lib/system/os" />
 				</Compiler>
 				<Linker>
 					<Add option="-flto" />
@@ -935,6 +937,9 @@
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="../../../user_app/one_wire/one_wire.h" />
+		<Unit filename="../../../user_app/protocol/app_msg_handle.c">
+			<Option compilerVar="CC" />
+		</Unit>
 		<Unit filename="../../../user_app/protocol/app_msg_typedef.c">
 			<Option compilerVar="CC" />
 		</Unit>
@@ -942,9 +947,6 @@
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="../../../user_app/protocol/dp_data_tran.h" />
-		<Unit filename="../../../user_app/protocol/report.c">
-			<Option compilerVar="CC" />
-		</Unit>
 		<Unit filename="../../../user_app/rf24g_key/rf24g_app.h" />
 		<Unit filename="../../../user_app/rf24g_key/rf24g_key.c">
 			<Option compilerVar="CC" />
@@ -956,18 +958,27 @@
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="../../../user_app/save_flash/save_flash.h" />
-		<Unit filename="../../../user_app/user_alarm/user_alarm.c">
-			<Option compilerVar="CC" />
-		</Unit>
 		<Unit filename="../../../user_app/user_alarm/user_rtc.h" />
 		<Unit filename="../../../user_app/user_ble_notify/user_ble_notify.c">
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="../../../user_app/user_ble_notify/user_ble_notify.h" />
+		<Unit filename="../../../user_app/user_ble_notify/user_ble_notify_app.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="../../../user_app/user_ble_notify/user_ble_notify_app.h" />
 		<Unit filename="../../../user_app/user_include.h" />
 		<Unit filename="../../../user_app/user_main.c">
 			<Option compilerVar="CC" />
 		</Unit>
+		<Unit filename="../../../user_app/user_rtc/user_rtc.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="../../../user_app/user_rtc/user_rtc.h" />
+		<Unit filename="../../../user_app/user_thread_communication/user_thread_communication.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="../../../user_app/user_thread_communication/user_thread_communication.h" />
 		<Unit filename="../../../user_app/ws2812-fx-lib/Adafruit_NeoPixel_C/Adafruit_NeoPixel.H" />
 		<Unit filename="../../../user_app/ws2812-fx-lib/Adafruit_NeoPixel_C/adafruit_typedef.h" />
 		<Unit filename="../../../user_app/ws2812-fx-lib/Adafruit_NeoPixel_C/neo_pixel.c">

@@ -4,7 +4,7 @@
 
 #include "led_strand_effect.h"
 #include "led_strip_rgb_schedule.h"
-#include "report.h"
+#include "user_ble_notify_app.h"
 
 #include "user_config.h"
 
@@ -75,11 +75,11 @@ void user_rtc_handle(void)
         }
     }
 
-    printf("%u:%u:%u\n", (u16)cur_time.hour, (u16)cur_time.min,
-           (u16)cur_time.sec);
-    printf("weekday == %u\n", (u16)cur_time.weekday);
-
-    // USER_TO_DO 如果到了闹钟时间，则执行相应的操作
+#if USER_DEBUG_ENABLE
+    // printf("%u:%u:%u\n", (u16)cur_time.hour, (u16)cur_time.min,
+    //        (u16)cur_time.sec);
+    // printf("weekday == %u\n", (u16)cur_time.weekday);
+#endif
 
     // 遍历闹钟 0 ~ 2
     for (i = 0; i < 3; i++) {
@@ -111,7 +111,7 @@ void user_rtc_handle(void)
                             led_strip_rgb_schedule();
                         }
 
-                        report_dev_on_off_state(fc_effect.on_off_flag);
+                        user_ble_notify_dev_pwr_sta(fc_effect.on_off_flag);
                     }
                 }
             }
@@ -136,7 +136,7 @@ void user_rtc_handle(void)
                     led_strip_rgb_schedule();
                 }
 
-                report_dev_on_off_state(fc_effect.on_off_flag);
+                user_ble_notify_dev_pwr_sta(fc_effect.on_off_flag);
             }
         }
     }

@@ -1,32 +1,9 @@
 #include "app_msg_typedef.h"
 #include "typedef.h"
 #include "Adafruit_NeoPixel.H"
-
-#if 0
-#define APP_MSG_MAX_LEN 20
-
-
-
-typedef enum
-{
-	MSG_TYPE_DEVICE_STATUS,	   // 设备开关机
-	MSG_TYPE_SET_STATIC_COLOR, // 设置静态颜色
+ 
+// 指令前缀 instruction prefix
+const u8 instruction_prefix[INSTRUCTION_PREFIX_LEN] = {
+	0x02, 0x01, 0xE9,
 };
 
-typedef struct
-{
-	u8 msg_type;
-	u8 msg_databuf[][APP_MSG_MAX_LEN];
-} app_msg_map_t;
-
-app_msg_map_t app_msg_map = {
-	{MSG_TYPE_DEVICE_STATUS, {0x01, 0x01}},
-	{MSG_TYPE_SET_STATIC_COLOR, {0x04, 0x01, 0x01, 0x1E}},
-};
-
-// 需要给 数据最后一个有效数据字节赋值为无效数据
-void app_msg_map_init(void)
-{
-}
-
-#endif

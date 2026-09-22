@@ -308,7 +308,7 @@ void app_set_bright(u8 tp_b)
 u16 get_max_speed(void)
 {
     u16 speed;
-    speed = (u32)fc_effect.led_num * 30 / 1000; // 每个LED30us
+    speed = (u32)fc_effect.led_num * 30 / 1000; // 每个LED 30us
     if (speed < MAX_FAST_SPEED)
         speed = MAX_FAST_SPEED;
     return speed; //

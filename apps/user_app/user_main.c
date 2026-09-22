@@ -6,8 +6,8 @@
 #include "led_strip_driver.h"
 #include "save_flash.h"
 #include "led_strip_rgb_schedule.h"
+#include "led_strip_rgb_app.h"
 #include "user_ble_notify.h"
-
 #include "user_rtc.h"
 
 extern void WS2812_circle_task(void);
@@ -42,6 +42,7 @@ void user_init(void)
     WS2812FX_setBrightness(fc_effect.b);
 
     led_strip_rgb_schedule();
+    task_create(led_strip_rgb_app_msg_handle_task, NULL, "app_msg_handle");
     task_create(user_main_task, NULL, "user_task");
 }
 
