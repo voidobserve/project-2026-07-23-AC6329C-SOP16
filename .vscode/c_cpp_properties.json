@@ -114,7 +114,8 @@
                 "${workspaceFolder}/apps/common/device/usb",
                 "${workspaceFolder}/apps/common/device/usb/device",
                 "${workspaceFolder}/apps/common/device/usb/host",
-                "${workspaceFolder}/apps/common/user_app/protocol",
+                "${workspaceFolder}/apps/user_app",
+                "${workspaceFolder}/apps/user_app/protocol",
           
                 "C:/JL/pi32/q32s-include"
             ],

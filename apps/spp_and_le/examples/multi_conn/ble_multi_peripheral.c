@@ -430,7 +430,16 @@ static int multi_att_write_callback(hci_con_handle_t connection_handle,
         break;
 
     case ATT_CHARACTERISTIC_fff1_01_VALUE_HANDLE:
-        log_info("\n-fff1_rx(%d):", buffer_size);
+        /*
+            tran(transaction_mode):
+                ATT_TRANSACTION_MODE_NONE(0)   -- 普通写，一包就是 APP 发的一条数据
+                ATT_TRANSACTION_MODE_ACTIVE(1) -- 长写(Prepare Write)的分片
+                ATT_TRANSACTION_MODE_EXECUTE(2)-- 长写结束(带 offset 和数据)
+            offset 是这一包在整条数据里的偏移，
+            如果 tran 不是 0，或者 offset 不是 0，就说明 APP 把一条指令拆包了
+        */
+        log_info("\n-fff1_rx(%d),tran=%d,offset=%d:", buffer_size,
+                 transaction_mode, offset);
         printf_buf(buffer, buffer_size);
         // extern void parse_led_strip_data(u8 * pBuf, u8 len);
         // parse_led_strip_data(buffer, buffer_size);

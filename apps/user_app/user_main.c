@@ -42,7 +42,8 @@ void user_init(void)
     WS2812FX_setBrightness(fc_effect.b);
 
     led_strip_rgb_schedule();
-    task_create(led_strip_rgb_app_msg_handle_task, NULL, "app_msg_handle");
+ 
+    task_create(led_strip_rgb_app_msg_handle_task, NULL, "app_msg");
     task_create(user_main_task, NULL, "user_task");
 }
 

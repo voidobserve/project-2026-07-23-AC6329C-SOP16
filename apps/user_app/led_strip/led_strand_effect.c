@@ -21,9 +21,9 @@ const u8 fade_type[3] = {
     FADE_XFAST, FADE_FAST, FADE_MEDIUM // FADE_SLOW
 };
 
-#define segment_num 1
+#define segment_num  1
 #define _0_seg_start 0
-#define _0_seg_stop 0
+#define _0_seg_stop  0
 
 /**
  * @brief 设置段的颜色
@@ -36,17 +36,24 @@ void ls_set_colors(uint8_t n, color_t *c)
     uint32_t colors[MAX_NUM_COLORS];
     uint8_t i;
 
+    /*
+        colors[] 只有 MAX_NUM_COLORS 个元素，
+        n 超了会把栈写坏，这里兜底截断一次
+    */
+    if (n > MAX_NUM_COLORS) {
+        n = MAX_NUM_COLORS;
+    }
+
 #if LED_STRIP_RGBW
 
-    for (i = 0; i < n; i++)
-    {
-        colors[i] = (u32)c[i].w << 24 | (u32)c[i].r << 16 | (u32)c[i].g << 8 | (u32)c[i].b;
+    for (i = 0; i < n; i++) {
+        colors[i] = (u32)c[i].w << 24 | (u32)c[i].r << 16 | (u32)c[i].g << 8 |
+                    (u32)c[i].b;
     }
 
 #elif LED_STRIP_RGB
 
-    for (i = 0; i < n; i++)
-    {
+    for (i = 0; i < n; i++) {
         colors[i] = c[i].r << 16 | c[i].g << 8 | c[i].b;
     }
 
@@ -60,8 +67,7 @@ void ls_set_colors(uint8_t n, color_t *c)
 // c:WS2812FX颜色系，R<<16,G<<8,B在低8位
 void ls_set_color(uint8_t n, uint32_t c)
 {
-    if (n < MAX_NUM_COLORS)
-    {
+    if (n < MAX_NUM_COLORS) {
 
 #if LED_STRIP_RGBW
         fc_effect.dream_scene.rgb[n].w = (c >> 24) & 0xff;
@@ -86,15 +92,19 @@ static void static_mode(void)
 {
     extern uint16_t WS2812FX_mode_static(void);
 
-    WS2812FX_setSegment_colorOptions(                   // 设置一段颜色的效果
-        0,                                              // 第0段
-        0, 0,                                           // 起始位置，结束位置
-        &WS2812FX_mode_static,                          // 效果
-        0,                                              // 颜色，WS2812FX_setColors设置
-        100,                                            // 速度
-        0);                                             // 选项，这里像素点大小：1
-    WS2812FX_set_coloQty(0, fc_effect.dream_scene.c_n); // 设置颜色数量  0：第0段   fc_effect.dream_scene.c_n  颜色数量，一个颜色包含（RGB）
-    ls_set_colors(1, &fc_effect.rgb);                   // 1:1个颜色    &fc_effect.rgb 这个颜色是什么色
+    WS2812FX_setSegment_colorOptions( // 设置一段颜色的效果
+        0,                            // 第0段
+        0, 0,                         // 起始位置，结束位置
+        &WS2812FX_mode_static,        // 效果
+        0,                            // 颜色，WS2812FX_setColors设置
+        100,                          // 速度
+        0);                           // 选项，这里像素点大小：1
+    WS2812FX_set_coloQty(
+        0,
+        fc_effect.dream_scene
+            .c_n); // 设置颜色数量  0：第0段   fc_effect.dream_scene.c_n  颜色数量，一个颜色包含（RGB）
+    ls_set_colors(
+        1, &fc_effect.rgb); // 1:1个颜色    &fc_effect.rgb 这个颜色是什么色
 
     // WS2812FX_start(); // 不能在这里清空显示的缓存，会导致流星灯也闪烁（流星灯会重新开始跑）
     WS2812FX_resetSegmentRuntime(0); // 清除指定段的显示缓存
@@ -113,13 +123,12 @@ static void static_mode(void)
 void strand_jump_change(void)
 {
     WS2812FX_stop();
-    WS2812FX_setSegment_colorOptions(
-        0,                                // 第0段
-        0, 0,                             // 起始位置，结束位置
-        &WS2812FX_mode_single_block_scan, // 效果
-        0,                                // 颜色，WS2812FX_setColors设置
-        fc_effect.dream_scene.speed,      // 速度
-        SIZE_MEDIUM);                     // 选项，这里像素点大小：3
+    WS2812FX_setSegment_colorOptions(0,    // 第0段
+                                     0, 0, // 起始位置，结束位置
+                                     &WS2812FX_mode_single_block_scan, // 效果
+                                     0, // 颜色，WS2812FX_setColors设置
+                                     fc_effect.dream_scene.speed, // 速度
+                                     SIZE_MEDIUM); // 选项，这里像素点大小：3
 
     WS2812FX_set_coloQty(0, fc_effect.dream_scene.c_n);
     ls_set_colors(fc_effect.dream_scene.c_n, &fc_effect.dream_scene.rgb);
@@ -132,14 +141,13 @@ void strand_jump_change(void)
 void strand_breath(void)
 {
     // WS2812FX_stop();
-    WS2812FX_setSegment_colorOptions(
-        0,                           // 第0段
-        0, 0,                        // 起始位置，结束位置
-        &WS2812FX_mode_mutil_breath, // 效果
-        0,                           // 颜色，WS2812FX_setColors设置
-        fc_effect.dream_scene.speed, // 速度
-        SIZE_MEDIUM                  // 选项，这里像素点大小：3
-        // NO_OPTIONS                  // 选项
+    WS2812FX_setSegment_colorOptions(0,    // 第0段
+                                     0, 0, // 起始位置，结束位置
+                                     &WS2812FX_mode_mutil_breath, // 效果
+                                     0, // 颜色，WS2812FX_setColors设置
+                                     fc_effect.dream_scene.speed, // 速度
+                                     SIZE_MEDIUM // 选项，这里像素点大小：3
+                                     // NO_OPTIONS                  // 选项
     );
 
     WS2812FX_set_coloQty(0, fc_effect.dream_scene.c_n);
@@ -153,13 +161,12 @@ void strand_breath(void)
 void single_c_breath(void)
 {
 
-    WS2812FX_setSegment_colorOptions(
-        0,                           // 第0段
-        0, 0,                        // 起始位置，结束位置
-        &WS2812FX_mode_breath,       // 效果
-        0,                           // 颜色，WS2812FX_setColors设置
-        fc_effect.dream_scene.speed, // 速 度
-        SIZE_MEDIUM                  // 选项，这里像素点大小：3
+    WS2812FX_setSegment_colorOptions(0,    // 第0段
+                                     0, 0, // 起始位置，结束位置
+                                     &WS2812FX_mode_breath, // 效果
+                                     0, // 颜色，WS2812FX_setColors设置
+                                     fc_effect.dream_scene.speed, // 速 度
+                                     SIZE_MEDIUM // 选项，这里像素点大小：3
     );
 
     WS2812FX_set_coloQty(0, fc_effect.dream_scene.c_n);
@@ -175,13 +182,12 @@ void strand_twihkle(void)
 {
 
     WS2812FX_stop();
-    WS2812FX_setSegment_colorOptions(
-        0,                               // 第0段
-        0, 0,                            // 起始位置，结束位置
-        &WS2812FX_mode_mutil_twihkle,    // 效果
-        0,                               // 颜色，WS2812FX_setColors设置
-        fc_effect.dream_scene.speed * 4, // 速度
-        SIZE_SMALL);                     // 选项，这里像素点大小：1
+    WS2812FX_setSegment_colorOptions(0,    // 第0段
+                                     0, 0, // 起始位置，结束位置
+                                     &WS2812FX_mode_mutil_twihkle, // 效果
+                                     0, // 颜色，WS2812FX_setColors设置
+                                     fc_effect.dream_scene.speed * 4, // 速度
+                                     SIZE_SMALL); // 选项，这里像素点大小：1
     WS2812FX_set_coloQty(0, fc_effect.dream_scene.c_n);
     ls_set_colors(fc_effect.dream_scene.c_n, &fc_effect.dream_scene.rgb);
 
@@ -193,13 +199,12 @@ void strand_twihkle(void)
 void ls_strobe(void)
 {
 
-    WS2812FX_setSegment_colorOptions(
-        0,                               // 第0段
-        0, 0,                            // 起始位置，结束位置
-        &WS2812FX_mutil_strobe,          // 效果
-        0,                               // 颜色，WS2812FX_setColors设置
-        fc_effect.dream_scene.speed * 5, // 速度
-        0);                              // 选项，这里像素点大小：3
+    WS2812FX_setSegment_colorOptions(0,    // 第0段
+                                     0, 0, // 起始位置，结束位置
+                                     &WS2812FX_mutil_strobe, // 效果
+                                     0, // 颜色，WS2812FX_setColors设置
+                                     fc_effect.dream_scene.speed * 5, // 速度
+                                     0); // 选项，这里像素点大小：3
 
     WS2812FX_set_coloQty(0, fc_effect.dream_scene.c_n);
     ls_set_colors(fc_effect.dream_scene.c_n, &fc_effect.dream_scene.rgb);
@@ -212,12 +217,9 @@ void strand_flow_water(void)
 {
     uint8_t option;
     // 正向
-    if (fc_effect.dream_scene.direction == IS_forward)
-    {
+    if (fc_effect.dream_scene.direction == IS_forward) {
         option = SIZE_MEDIUM | 0;
-    }
-    else
-    {
+    } else {
         option = SIZE_MEDIUM | REVERSE;
     }
 
@@ -243,8 +245,7 @@ void strand_chas_light(void)
 
     WS2812FX_stop();
     // 正向
-    if (fc_effect.dream_scene.direction == IS_forward)
-    {
+    if (fc_effect.dream_scene.direction == IS_forward) {
         WS2812FX_setSegment_colorOptions(
             0,                                 // 第0段
             0, 0,                              // 起始位置，结束位置
@@ -252,16 +253,13 @@ void strand_chas_light(void)
             0,                                 // 颜色，WS2812FX_setColors设置
             fc_effect.dream_scene.speed,       // 速度
             0);                                // 选项
-    }
-    else
-    {
-        WS2812FX_setSegment_colorOptions(
-            0,                              // 第0段
-            0, 0,                           // 起始位置，结束位置
-            &WS2812FX_mode_multi_back_same, // 效果
-            0,                              // 颜色，WS2812FX_setColors设置
-            fc_effect.dream_scene.speed,    // 速度
-            0);
+    } else {
+        WS2812FX_setSegment_colorOptions(0,    // 第0段
+                                         0, 0, // 起始位置，结束位置
+                                         &WS2812FX_mode_multi_back_same, // 效果
+                                         0, // 颜色，WS2812FX_setColors设置
+                                         fc_effect.dream_scene.speed, // 速度
+                                         0);
     }
     WS2812FX_set_coloQty(0, fc_effect.dream_scene.c_n);
     ls_set_colors(fc_effect.dream_scene.c_n, &fc_effect.dream_scene.rgb);
@@ -276,13 +274,12 @@ void strand_colorful(void)
 {
     uint8_t option;
     WS2812FX_stop();
-    WS2812FX_setSegment_colorOptions(
-        0,                               // 第0段
-        0, 0,                            // 起始位置，结束位置
-        &WS2812FX_mode_multi_block_scan, // 效果
-        0,                               // 颜色，WS2812FX_setColors设置
-        fc_effect.dream_scene.speed,     // 速度
-        SIZE_SMALL);                     // 选项，这里像素点大小：1
+    WS2812FX_setSegment_colorOptions(0,    // 第0段
+                                     0, 0, // 起始位置，结束位置
+                                     &WS2812FX_mode_multi_block_scan, // 效果
+                                     0, // 颜色，WS2812FX_setColors设置
+                                     fc_effect.dream_scene.speed, // 速度
+                                     SIZE_SMALL); // 选项，这里像素点大小：1
     WS2812FX_set_coloQty(0, fc_effect.dream_scene.c_n);
     ls_set_colors(fc_effect.dream_scene.c_n, &fc_effect.dream_scene.rgb);
 
@@ -337,13 +334,12 @@ void w_grandual(void)
 
     extern uint16_t breath_w(void);
 
-    WS2812FX_setSegment_colorOptions(
-        0,                           // 第0段
-        0, 0,                        // 起始位置，结束位置
-        &breath_w,                   // 效果
-        WHITE,                       // 颜色，WS2812FX_setColors设置
-        fc_effect.dream_scene.speed, // 速度
-        0);                          // 选项，这里像素点大小：3,反向/反向
+    WS2812FX_setSegment_colorOptions(0,         // 第0段
+                                     0, 0,      // 起始位置，结束位置
+                                     &breath_w, // 效果
+                                     WHITE,     // 颜色，WS2812FX_setColors设置
+                                     fc_effect.dream_scene.speed, // 速度
+                                     0); // 选项，这里像素点大小：3,反向/反向
 
     // WS2812FX_start();
     WS2812FX_resetSegmentRuntime(0); // 清除指定段的显示缓存
@@ -355,13 +351,12 @@ void standard_jump(void)
 {
     extern uint16_t WS2812FX_mutil_c_jump(void);
     // WS2812FX_stop();
-    WS2812FX_setSegment_colorOptions(
-        0,                                  // 第0段
-        0, 0,                               // 起始位置，结束位置
-        &WS2812FX_mutil_c_jump,             // 效果
-        0,                                  // 颜色，WS2812FX_setColors设置
-        (fc_effect.dream_scene.speed * 40), // 速度
-        0);                                 // 选项，这里像素点大小：3
+    WS2812FX_setSegment_colorOptions(0,    // 第0段
+                                     0, 0, // 起始位置，结束位置
+                                     &WS2812FX_mutil_c_jump, // 效果
+                                     0, // 颜色，WS2812FX_setColors设置
+                                     (fc_effect.dream_scene.speed * 40), // 速度
+                                     0); // 选项，这里像素点大小：3
 
     WS2812FX_set_coloQty(0, fc_effect.dream_scene.c_n);
     ls_set_colors(fc_effect.dream_scene.c_n, &fc_effect.dream_scene.rgb);
@@ -378,12 +373,9 @@ void strand_meteor(u8 index)
 {
     uint8_t option;
     // 正向
-    if (fc_effect.dream_scene.direction == IS_forward)
-    {
+    if (fc_effect.dream_scene.direction == IS_forward) {
         option = 0;
-    }
-    else
-    {
+    } else {
         option = REVERSE;
     }
 
@@ -393,9 +385,9 @@ void strand_meteor(u8 index)
         1, fc_effect.led_num, // 起始位置，结束位置
         // &WS2812FX_mode_comet_1,          // 效果
         &WS2812FX_mode_comet_1_with_max_brightness, // 效果
-        WHITE,                                      // 颜色，WS2812FX_setColors设置
-        fc_effect.star_speed,                       // 速度
-        fade_type[index - 19] | option);            // 选项，这里像素点大小：3,反向/反向
+        WHITE,                           // 颜色，WS2812FX_setColors设置
+        fc_effect.star_speed,            // 速度
+        fade_type[index - 19] | option); // 选项，这里像素点大小：3,反向/反向
     // WS2812FX_start();
     WS2812FX_resetSegmentRuntime(1); // 重置流星灯所在的段运行时参数
     WS2812FX_running_flag_set();
@@ -406,12 +398,9 @@ void double_meteor(void)
     extern uint16_t fc_double_meteor(void);
     uint8_t option;
     // 正向
-    if (fc_effect.dream_scene.direction == IS_forward)
-    {
+    if (fc_effect.dream_scene.direction == IS_forward) {
         option = 0;
-    }
-    else
-    {
+    } else {
         option = REVERSE;
     }
 
@@ -423,7 +412,7 @@ void double_meteor(void)
         &fc_double_meteor_with_max_brightness, // 效果
         WHITE,                                 // 颜色，WS2812FX_setColors设置
         fc_effect.star_speed,                  // 速度
-        option);                               // 选项，这里像素点大小：3,反向/反向
+        option); // 选项，这里像素点大小：3,反向/反向
 
     // WS2812FX_start();
     WS2812FX_resetSegmentRuntime(1); // 重置流星灯所在的段运行时参数
@@ -741,8 +730,7 @@ void base_Dynamic_Effect(u8 tp_num)
 static void ls_scene_effect(void)
 {
     // app_set_bright(100);
-    switch (fc_effect.dream_scene.change_type)
-    {
+    switch (fc_effect.dream_scene.change_type) {
 
         // case MODE_MUTIL_RAINBOW: // 彩虹
         //     strand_rainbow();
@@ -1057,8 +1045,7 @@ static void ls_music_effect(void)
 {
 #if 1
     void *music_effect_addr = NULL;
-    switch (fc_effect.music.m)
-    {
+    switch (fc_effect.music.m) {
     case 0:
         music_effect_addr = &colorful_lights_sound_gradual_max_brightness;
         break;
@@ -1159,13 +1146,11 @@ static void ls_static_effect(void)
  */
 void set_fc_effect(void)
 {
-    if (DEVICE_OFF == fc_effect.on_off_flag)
-    {
+    if (DEVICE_OFF == fc_effect.on_off_flag) {
         return;
     }
 
-    switch (fc_effect.Now_state)
-    {
+    switch (fc_effect.Now_state) {
     // 幻彩场景
     case IS_light_scene:
         ls_scene_effect();
@@ -1204,15 +1189,18 @@ void set_fc_effect(void)
             0,                            // 起始位置
             0,                            // 结束位置
             &colorful_lights_static_max_brightness,
-            0,                                              // 颜色，WS2812FX_setColors设置
-            100,                                            // 速度
-            0);                                             // 选项，这里像素点大小：1
-        WS2812FX_set_coloQty(0, fc_effect.dream_scene.c_n); // 设置颜色数量  0：第0段   fc_effect.dream_scene.c_n  颜色数量，一个颜色包含（RGB）
-        ls_set_colors(1, &fc_effect.rgb);                   // 1:1个颜色    &fc_effect.rgb 这个颜色是什么色
-        WS2812FX_resetSegmentRuntime(0);                    // 清除指定段的显示缓存
-        WS2812FX_running_flag_set();                        // 置位运行标志
-    }
-    break;
+            0,   // 颜色，WS2812FX_setColors设置
+            100, // 速度
+            0);  // 选项，这里像素点大小：1
+        WS2812FX_set_coloQty(
+            0,
+            fc_effect.dream_scene
+                .c_n); // 设置颜色数量  0：第0段   fc_effect.dream_scene.c_n  颜色数量，一个颜色包含（RGB）
+        ls_set_colors(
+            1, &fc_effect.rgb); // 1:1个颜色    &fc_effect.rgb 这个颜色是什么色
+        WS2812FX_resetSegmentRuntime(0); // 清除指定段的显示缓存
+        WS2812FX_running_flag_set();     // 置位运行标志
+    } break;
     default:
         break;
     }

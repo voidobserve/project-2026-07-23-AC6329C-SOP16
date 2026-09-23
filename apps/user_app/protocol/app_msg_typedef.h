@@ -4,7 +4,7 @@
 #include "typedef.h"
 
 // 设备与app通信中，最大传递的颜色数量
-#define APP_MSG_COLOR_NUM_MAX 16
+#define APP_MSG_COLOR_NUM_MAX 8
 #define APP_MSG_COLOR_BUF_MAX (APP_MSG_COLOR_NUM_MAX * 3)
 
 #define INSTRUCTION_PREFIX_LEN 3
@@ -55,6 +55,9 @@ typedef struct
     u8 color_buf[APP_MSG_COLOR_BUF_MAX]; // 动画颜色数据
 
 } app_msg_anim_info_t;
+
+#define APP_MSG_ANIM_INFO_FIXED_LEN \
+    (sizeof(app_msg_anim_info_t) - APP_MSG_COLOR_BUF_MAX)
 
 extern const u8 instruction_prefix[INSTRUCTION_PREFIX_LEN]; // 指令前缀
 

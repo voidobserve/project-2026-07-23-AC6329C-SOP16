@@ -60,7 +60,8 @@ int user_thread_communication_recv_msg_any(user_msg_type_t *msg_type)
         return 4;
     }
 
-    ret = os_taskq_pend(os_current_task, msg, 1);
+    // ret = os_taskq_pend(os_current_task, msg, 1);
+    ret = os_taskq_pend(LED_STRIP_RGB_TASK_NAME, msg, 1);
     if (ret != OS_TASKQ) {
         // 不是消息队列
         return 1;

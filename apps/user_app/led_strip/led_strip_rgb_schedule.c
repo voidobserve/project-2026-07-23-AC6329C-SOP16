@@ -48,7 +48,6 @@ void led_strip_rgb_schedule_init(void)
     fc_effect.dream_scene.rgb[0].r = 255;
     fc_effect.dream_scene.rgb[0].g = 0;
     fc_effect.dream_scene.rgb[0].b = 0;
-    // fc_effect.dream_scene.change_type = MODE_COLOR_METEOR;
 
 #if 0
 	// led_strip_rgb.dream_scene.speed = 100;
@@ -64,29 +63,6 @@ void led_strip_rgb_schedule_init(void)
 }
 
 // USER_TO_DO 下面这些处理函数，都可以用查表的方法，把动画、速度、配置写到映射表中：
-
-// 单个，全彩颜色的流星效果
-// void led_strip_rgb_color_meteor_handler(void)
-// {
-// 	mode_ptr mode;
-// 	uint8_t option;
-
-// 	mode = &led_strip_rgb_anim_single_color_meteor;
-
-// 	if (fc_effect.dream_scene.direction == IS_forward)
-// 	{
-// 		option = 0 | SIZE_XLARGE;
-// 	}
-// 	else
-// 	{
-// 		option = REVERSE | SIZE_XLARGE;
-// 	}
-
-// 	led_strip_rgb_schedule_set_mode(
-// 		mode,
-// 		fc_effect.dream_scene.speed,
-// 		option);
-// }
 
 void led_strip_rgb_strand_rainbow_handler(void)
 {
@@ -778,6 +754,10 @@ void led_strip_rgb_schedule(void)
     u16 speed = 0;
     u8 option = NO_OPTIONS;
 
+#if USER_DEBUG_ENABLE
+    printf("%s %d\n", __FUNCTION__, __LINE__); 
+#endif
+
     if (fc_effect.on_off_flag == DEVICE_OFF) {
         // 跑关机动画
         led_strip_rgb_mode = &led_strip_rgb_anim_pwr_off;
@@ -811,6 +791,9 @@ void led_strip_rgb_schedule(void)
         led_strip_rgb_mode = &WS2812FX_mode_static;
         speed = 100;
         option = FADE_GLACIAL;
+#if USER_DEBUG_ENABLE
+        printf("%s %d\n", __FUNCTION__, __LINE__);  
+#endif
         led_strip_rgb_schedule_set_mode(led_strip_rgb_mode, speed, option);
 #if USER_DEBUG_ENABLE
         printf("IS_STATIC\n");

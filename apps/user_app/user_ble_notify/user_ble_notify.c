@@ -4,6 +4,7 @@
 #include "ble_multi_profile.h"
 #include "att.h"
 #include "user_config.h"
+#include "app_msg_typedef.h"
 
 volatile user_ble_notify_t user_ble_notify_param = {
     // .send_buff[0][0] = {0},
@@ -12,6 +13,11 @@ volatile user_ble_notify_t user_ble_notify_param = {
     .send_buff_tail = 0,
     .send_buff_num = 0,
 };
+
+#if USE_ILAMP_APP_INSTRUCT || USE_PRIVATE_APP_INSTRUCT
+// 把它放在函数内会占用很大的栈空间，所以把它放在全局变量中
+volatile u8 send_buf[USER_BLE_NOTIFY_SEND_BUFF_MAX_LEN + 6] = {0};
+#endif
 
 void user_ble_notify_param_put(u8 *buff, u16 len)
 {
@@ -47,9 +53,6 @@ void user_ble_notify_param_put(u8 *buff, u16 len)
 
 void user_ble_notify_param_handle(void)
 {
-#if USE_ILAMP_APP_INSTRUCT
-    volatile u8 send_buf[USER_BLE_NOTIFY_SEND_BUFF_MAX_LEN];
-#endif
 
     if (user_ble_notify_param.send_buff_num == 0) {
         // 缓冲区中没有存放指令，直接返回
@@ -84,12 +87,19 @@ void user_ble_notify_param_handle(void)
 
 #elif USE_PRIVATE_APP_INSTRUCT
 
+    memcpy(send_buf, instruction_prefix, INSTRUCTION_PREFIX_LEN);
+    memcpy(
+        send_buf + INSTRUCTION_PREFIX_LEN,
+        user_ble_notify_param.send_buff[user_ble_notify_param.send_buff_tail],
+        user_ble_notify_param
+            .send_buff_len[user_ble_notify_param.send_buff_tail]);
+
     ble_comm_att_send_data(
         ZD_HCI_handle, ATT_CHARACTERISTIC_fff1_01_VALUE_HANDLE,
-        (user_ble_notify_param
-             .send_buff[user_ble_notify_param.send_buff_tail]), // 指令
+        send_buf, // 指令前缀 + 指令
         user_ble_notify_param
-            .send_buff_len[user_ble_notify_param.send_buff_tail], // 指令的长度
+                .send_buff_len[user_ble_notify_param.send_buff_tail] +
+            INSTRUCTION_PREFIX_LEN, // 指令的长度
         ATT_OP_AUTO_READ_CCC);
     user_ble_notify_param.send_buff_num--;
 

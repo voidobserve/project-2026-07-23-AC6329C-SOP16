@@ -8,12 +8,34 @@
 #include "Adafruit_NeoPixel.h" //
 
 #include "user_rtc.h"
+#include "user_ble_notify_app.h"
 #include "user_thread_communication.h"
 #include "user_config.h"
 
 static const u8 rgb_sequence_map[6] = {
     NEO_RGB, NEO_RBG, NEO_GRB, NEO_GBR, NEO_BRG, NEO_BGR,
 };
+
+/*
+    指令投递缓冲区
+    ----------------------------------------------------------------------
+    蓝牙写回调（btstack 任务）里只做一次拷贝 + 发一条消息，
+    指令的解析和执行都放到 app_msg_handle 任务里完成，
+    避免耗时操作长时间占用蓝牙回调。
+
+    写入方： app_msg_post()          —— 蓝牙写回调
+    读取方： app_msg_post_fetch()    —— app_msg_handle 任务
+
+    注意：缓冲区满时，新指令会覆盖最旧的一条指令。
+    ----------------------------------------------------------------------
+*/
+#define APP_MSG_POST_BUF_NUM 8 // 投递缓冲区可缓存的指令条数
+
+static volatile u8 app_msg_post_buf[APP_MSG_POST_BUF_NUM]
+                                   [APP_MSG_POST_BUF_MAX_LEN];
+static volatile u16 app_msg_post_len[APP_MSG_POST_BUF_NUM];
+static volatile u8 app_msg_post_buf_idx = 0; // 投递缓冲区的写索引
+static volatile u8 app_msg_post_cnt = 0;     // 待处理的指令条数
 
 /*
     指令分发表（表驱动）
@@ -46,6 +68,9 @@ static void app_msg_set_sound_control_sensitivity_handle(const u8 *payload,
                                                          u16 len);
 static void app_msg_set_sound_control_by_phone_handle(const u8 *payload,
                                                       u16 len);
+static void app_msg_set_static_color_handle(const u8 *payload, u16 len);
+static void app_msg_set_brightness_handle(const u8 *payload, u16 len);
+static void app_msg_set_speed_handle(const u8 *payload, u16 len);
 
 typedef void (*app_msg_cmd_handler_t)(const u8 *payload, u16 len);
 
@@ -103,6 +128,24 @@ static const app_msg_cmd_entry_t app_msg_cmd_table[] = {
         06    04    R    G    B    亮度百分比
     */
     {{0x06, 0x04}, 2, 6, app_msg_set_sound_control_by_phone_handle},
+
+    /*
+        设置静态模式，调节静态颜色
+        04 01 1E R G B
+    */
+    {{0x04, 0x01}, 2, 6, app_msg_set_static_color_handle},
+
+    /*
+        调节亮度
+        04 03 亮度
+    */
+    {{0x04, 0x03}, 2, 3, app_msg_set_brightness_handle},
+
+    /*
+        调节速度
+        04 04 速度
+    */
+    {{0x04, 0x04}, 2, 3, app_msg_set_speed_handle},
 };
 
 #define APP_MSG_CMD_TABLE_SIZE                                                 \
@@ -110,6 +153,42 @@ static const app_msg_cmd_entry_t app_msg_cmd_table[] = {
 
 // 只用在当前源文件，存放当前app传递过来的动画数据
 static volatile app_msg_anim_info_t app_msg_anim_info = {0};
+
+void app_msg_anim_info_init(void)
+{
+    memset(&app_msg_anim_info, 0, sizeof(app_msg_anim_info_t));
+    app_msg_anim_info.mode_idx = 1;           // 静态模式
+    app_msg_anim_info.anim_dir = 0;           // 正向
+    app_msg_anim_info.anim_speed = 80;        // 速度
+    app_msg_anim_info.anim_brightness = 100;  // 亮度
+    app_msg_anim_info.seg_size = 1;           // 段大小
+    app_msg_anim_info.seg_num = 1;            // 段数量
+    app_msg_anim_info.background_color_r = 0; // 背景色
+    app_msg_anim_info.background_color_g = 0; // 背景色
+    app_msg_anim_info.background_color_b = 0; // 背景色
+    app_msg_anim_info.color_num = 1;          // 颜色数量
+    app_msg_anim_info.color_buf[0] = 0xFF;    // 颜色数据
+    app_msg_anim_info.color_buf[1] = 0;       // 颜色数据
+    app_msg_anim_info.color_buf[2] = 0;       // 颜色数据
+}
+
+/**
+ * @brief 上电后，通过flash读取的配置信息，更新幻彩灯动画参数
+ * 
+ * @param info 
+ * @return * void 
+ */
+void app_msg_anim_info_set(app_msg_anim_info_t *info)
+{
+    if (info == NULL) {
+        return;
+    }
+
+    OS_ENTER_CRITICAL();
+    // 更新接收到的数据
+    memcpy((void *)&app_msg_anim_info, info, sizeof(app_msg_anim_info_t));
+    OS_EXIT_CRITICAL();
+}
 
 /**
  * @brief 幻彩灯动画参数（0x7F 0xFF ...）对应的处理函数
@@ -123,12 +202,21 @@ static void app_msg_color_light_handle(const u8 *payload, u16 len)
     u8 color_buf_idx = 0;
     app_msg_anim_info_t new_info = {0};
 
+#if USER_DEBUG_ENABLE
+    printf("%s %d", __FUNCTION__, __LINE__);
+#endif
+
     if (len < 15) {
+#if USER_DEBUG_ENABLE
+        printf("len < 15 , function return\n");
+#endif
         return;
     }
 
-    new_info.format_head = (uint16_t)payload[i++] << 8;
-    new_info.format_head |= payload[i++];
+    // 传递过来的数据是大端，需要转换成小端
+    new_info.format_head = (uint16_t)payload[i++];
+    new_info.format_head |= (uint16_t)payload[i++] << 8;
+
     new_info.mode_idx = payload[i++];
     new_info.anim_dir = payload[i++];
     new_info.anim_speed = payload[i++];
@@ -144,6 +232,10 @@ static void app_msg_color_light_handle(const u8 *payload, u16 len)
     // 颜色数据长度超出了内部缓冲区大小，或者是颜色数据长度小于一个颜色对应的长度
     if (new_info.color_num > APP_MSG_COLOR_NUM_MAX ||
         len < ((15 - 3) + (new_info.color_num * 3))) {
+#if USER_DEBUG_ENABLE
+        printf("%s %d", __FUNCTION__, __LINE__);
+        printf("function return\n");
+#endif
         return;
     }
 
@@ -162,9 +254,12 @@ static void app_msg_color_light_handle(const u8 *payload, u16 len)
 #endif
 
     // 通知其他模块，幻彩灯模式发生了变化
-    user_thread_communication_send_msg(
-        LED_STRIP_RGB_TASK_NAME,
-        USER_THREAD_COMM_MSG_TYPE_APP_MSG_ANIM_INFO_UPDATE);
+    // user_thread_communication_send_msg(
+    //     LED_STRIP_RGB_TASK_NAME,
+    //     USER_THREAD_COMM_MSG_TYPE_APP_MSG_ANIM_INFO_UPDATE);
+    led_strip_rgb_apply_anim_info(&app_msg_anim_info);
+
+    user_ble_notify_anim_info((app_msg_anim_info_t *)&app_msg_anim_info);
 }
 
 void app_msg_anim_info_get(app_msg_anim_info_t *info)
@@ -175,7 +270,7 @@ void app_msg_anim_info_get(app_msg_anim_info_t *info)
 
     OS_ENTER_CRITICAL();
     // 获取接收到的数据
-    memcpy(info, (const void *)&app_msg_anim_info, sizeof(*info));
+    memcpy(info, (const void *)&app_msg_anim_info, sizeof(app_msg_anim_info_t));
     OS_EXIT_CRITICAL();
 }
 
@@ -188,6 +283,7 @@ void app_msg_anim_info_get(app_msg_anim_info_t *info)
 static void app_msg_syn_handle(const u8 *payload, u16 len)
 {
     user_alarm_t alarm[3] = {0};
+    app_msg_anim_info_t info = {0};
 
     // 同步指令不带参数，加void修饰，防止编译器报错
     (void)payload;
@@ -211,8 +307,10 @@ static void app_msg_syn_handle(const u8 *payload, u16 len)
     user_ble_notify_alarm_info(1, alarm[1]);
     user_ble_notify_alarm_info(2, alarm[2]);
 
-    // USER_TO_DO app发送同步指令时，要整理当前动画的信息，并返回给app
+    // app发送同步指令时，要整理当前动画的信息，并返回给app
     // app_msg_anim_info_t -> app
+    app_msg_anim_info_get(&info);
+    user_ble_notify_anim_info(&info);
 }
 
 /**
@@ -344,8 +442,8 @@ static void app_msg_set_sound_control_by_phone_handle(const u8 *payload,
                                                       u16 len)
 {
     u8 brightness_percent;
-    set_static_mode(payload[2], payload[3], payload[4]);
     (void)len;
+    set_static_mode(payload[2], payload[3], payload[4]);
 
     brightness_percent = payload[5];
     if (brightness_percent > 100) {
@@ -357,26 +455,39 @@ static void app_msg_set_sound_control_by_phone_handle(const u8 *payload,
     WS2812FX_setBrightness(fc_effect.b);
 }
 
-/*
-    指令投递缓冲区
-    ----------------------------------------------------------------------
-    蓝牙写回调（btstack 任务）里只做一次拷贝 + 发一条消息，
-    指令的解析和执行都放到 app_msg_handle 任务里完成，
-    避免耗时操作长时间占用蓝牙回调。
+static void app_msg_set_static_color_handle(const u8 *payload, u16 len)
+{
+    (void)len;
+    set_static_mode(payload[2], payload[3], payload[4]);
+}
 
-    写入方：app_msg_post()          —— 蓝牙写回调
-    读取方：app_msg_post_fetch()    —— app_msg_handle 任务
+static void app_msg_set_brightness_handle(const u8 *payload, u16 len)
+{
 
-    注意：缓冲区满时，新指令会覆盖最旧的一条指令。
-    ----------------------------------------------------------------------
-*/
-#define APP_MSG_POST_BUF_NUM 8 // 投递缓冲区可缓存的指令条数
+    (void)len;
+    fc_effect.app_b = payload[2];
+    if (fc_effect.app_b > 100) {
+        fc_effect.app_b = 100;
+    }
 
-static volatile u8 app_msg_post_buf[APP_MSG_POST_BUF_NUM]
-                                   [APP_MSG_POST_BUF_MAX_LEN];
-static volatile u16 app_msg_post_len[APP_MSG_POST_BUF_NUM];
-static volatile u8 app_msg_post_wr = 0;  // 投递缓冲区的写索引
-static volatile u8 app_msg_post_cnt = 0; // 待处理的指令条数
+    fc_effect.b = (u16)fc_effect.app_b * (255 - 25) / 100 + 25;
+    WS2812FX_setBrightness(fc_effect.b);
+    user_ble_notify_brightness(fc_effect.app_b);
+}
+
+static void app_msg_set_speed_handle(const u8 *payload, u16 len)
+{
+    u8 speed = payload[2];
+    (void)len;
+    fc_effect.app_speed = speed;
+    fc_effect.dream_scene.speed = 500 - ((u32)500 * speed / 100);
+    if (fc_effect.dream_scene.speed <= get_max_speed()) {
+        fc_effect.dream_scene.speed = get_max_speed();
+    }
+
+    led_strip_rgb_schedule();
+    user_ble_notify_speed(fc_effect.app_speed);
+}
 
 /**
  * @brief 投递一条 app 指令（在蓝牙写回调里调用）
@@ -396,16 +507,16 @@ void app_msg_post(uint8_t *buf, uint16_t len)
     }
 
     OS_ENTER_CRITICAL();
-    idx = app_msg_post_wr;
+    idx = app_msg_post_buf_idx;
 
     // 把指令拷贝到投递缓冲区
     memcpy((void *)app_msg_post_buf[idx], buf, len);
     app_msg_post_len[idx] = len;
 
     // 先偏移索引，再增加指令条数
-    app_msg_post_wr++;
-    if (app_msg_post_wr >= APP_MSG_POST_BUF_NUM) {
-        app_msg_post_wr = 0;
+    app_msg_post_buf_idx++;
+    if (app_msg_post_buf_idx >= APP_MSG_POST_BUF_NUM) {
+        app_msg_post_buf_idx = 0;
     }
     if (app_msg_post_cnt < APP_MSG_POST_BUF_NUM) {
         app_msg_post_cnt++;
@@ -439,8 +550,9 @@ u8 app_msg_post_fetch(uint8_t *buf, uint16_t *len)
     }
 
     // 计算最旧一条指令的存放位置，并取出
-    idx = (u8)((app_msg_post_wr + APP_MSG_POST_BUF_NUM - app_msg_post_cnt) %
-               APP_MSG_POST_BUF_NUM);
+    idx =
+        (u8)((app_msg_post_buf_idx + APP_MSG_POST_BUF_NUM - app_msg_post_cnt) %
+             APP_MSG_POST_BUF_NUM);
     memcpy(buf, (const void *)app_msg_post_buf[idx], app_msg_post_len[idx]);
     *len = app_msg_post_len[idx];
 
@@ -457,6 +569,10 @@ void app_msg_handle(uint8_t *buf, uint16_t len)
     u8 i;
     const app_msg_cmd_entry_t *entry;
 
+#if USER_DEBUG_ENABLE
+    printf("%s %d\n", __FUNCTION__, __LINE__);
+#endif
+
     if (len < INSTRUCTION_PREFIX_LEN ||
         (0 != memcmp(instruction_prefix, buf, INSTRUCTION_PREFIX_LEN))) {
         /*
@@ -465,6 +581,9 @@ void app_msg_handle(uint8_t *buf, uint16_t len)
 
 			直接返回
 		*/
+#if USER_DEBUG_ENABLE
+        printf("app_msg: invalid instruction\n");
+#endif
         return;
     }
 
@@ -485,6 +604,9 @@ void app_msg_handle(uint8_t *buf, uint16_t len)
             continue;
         }
 
+#if USER_DEBUG_ENABLE
+        printf("%s %d\n", __FUNCTION__, __LINE__);
+#endif
         entry->handler(payload, payload_len);
         return;
     }

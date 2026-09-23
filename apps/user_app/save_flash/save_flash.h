@@ -6,16 +6,17 @@
 #include "led_strip_driver.h"
 
 #include "led_strip_rgb_schedule.h"
-#include "led_strip_white_schedule.h"
+// #include "led_strip_white_schedule.h"
+#include "app_msg_typedef.h"
+#include "app_msg_handle.h"
 
 #pragma pack(1)
 typedef struct
 {
     unsigned char header; // 头部
 
-    fc_effect_t fc_save;
-    led_strip_white_t led_strip_white;
-
+    fc_effect_t fc_save; 
+    app_msg_anim_info_t anim_info_save;
 } save_flash_t;
 
 #pragma pack()

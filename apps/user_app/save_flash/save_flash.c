@@ -26,19 +26,17 @@ void user_data_init(void)
         // 保存的数据无效，可能是第一次上电，或者是数据损坏，重新初始化
         save_data.header = FLASH_CRC_DATA;
         led_strip_rgb_schedule_init();
-        // led_strip_white_schedule_init();
+        app_msg_anim_info_init();
         user_data_save_enable();
     } else {
         // 保存的数据有效，根据保存的数据进行初始化
         memcpy((void *)(&fc_effect), (void *)(&save_data.fc_save),
                sizeof(fc_effect_t));
-        // memcpy((u8 *)(&led_strip_white), (u8 *)(&save_data.led_strip_white),
-        //        sizeof(led_strip_white_t));
+        app_msg_anim_info_set(&save_data.anim_info_save);
     }
 
     // 每次上电，默认打开设备
     fc_effect.on_off_flag = DEVICE_ON;
-    // led_strip_white.is_dev_open = 1;
 }
 
 /**
@@ -73,6 +71,7 @@ static void user_data_save(void)
 
     memcpy((void *)(&save_data.fc_save), (void *)(&fc_effect),
            sizeof(fc_effect_t));
+    app_msg_anim_info_get(&save_data.anim_info_save);
 
     os_time_dly(1); // 先让出cpu，处理其他任务，防止看门狗复位
     ret = syscfg_write(CFG_USER_LED_DATA, (u8 *)(&save_data),

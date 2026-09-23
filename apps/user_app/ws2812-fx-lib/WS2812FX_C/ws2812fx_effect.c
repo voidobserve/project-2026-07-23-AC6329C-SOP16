@@ -2730,7 +2730,8 @@ uint16_t WS2812FX_mode_mutil_breath(void)
     _seg_rt->aux_param3 += 4;
     _seg_rt->aux_param3 %= 511;
 
-    printf("cycle\n");
+   
+    // printf("cycle\n");
 
     return _seg->speed / 4;
 }

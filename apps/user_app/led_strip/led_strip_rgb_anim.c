@@ -5,6 +5,8 @@
 #include "ws2812fx_tool.h"
 #include "Adafruit_NeoPixel.H"
 
+#include "user_config.h"
+
 volatile music_fs_t m_fs = {
     .rise_tag = 40,
     .bgc = GRAY,
@@ -176,13 +178,18 @@ u16 led_strip_rgb_anim_single_block_scan(void)
     uint8_t size = fc_effect.dream_scene.seg_size;
     uint8_t j;
     uint32_t c;
-    // printf("\n b=%d",Adafruit_NeoPixel_getBrightness());
-    if (size > (_seg->stop - _seg->start))
+
+#if USER_DEBUG_ENABLE
+    // printf("%s %d\n", __FUNCTION__, __LINE__);
+#endif
+
+    if (size > (_seg->stop - _seg->start)) {
         return 0;
+    }
 
     _seg_rt->counter_mode_step = 0;
-    _seg_rt->aux_param = 0;
-    // while (_seg_rt->counter_mode_step < _seg->stop)
+    _seg_rt->aux_param = 0; 
+
     while (_seg_rt->counter_mode_step < _seg_len) {
         for (j = 0; j < size; j++) {
             if (IS_REVERSE) {

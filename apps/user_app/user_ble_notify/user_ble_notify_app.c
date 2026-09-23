@@ -2,6 +2,8 @@
 #include "user_ble_notify.h"
 
 #include "led_strand_effect.h" // ALARM_CLOCK 类型定义
+#include "app_msg_handle.h"
+
 #include "user_config.h"
 
 // 向app反馈声控类型：手机麦或者设备麦
@@ -173,4 +175,16 @@ void user_ble_notify_sound_control_mode(u8 mode)
     buf[len++] = mode;
 
     user_ble_notify_param_put(buf, len);
+}
+
+void user_ble_notify_anim_info(app_msg_anim_info_t *info)
+{
+    u16 len;
+
+    if (info == NULL || info->color_num > APP_MSG_COLOR_NUM_MAX) {
+        return;
+    }
+
+    len = APP_MSG_ANIM_INFO_FIXED_LEN + info->color_num * 3;
+    user_ble_notify_param_put((u8 *)info, len);
 }

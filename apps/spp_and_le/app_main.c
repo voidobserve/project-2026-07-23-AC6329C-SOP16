@@ -84,7 +84,12 @@ const struct task_info task_info_table[] = {
     {"user_task", 2, 0, 512, 512}, //
     // {"msg_task", 3, 0, 256, 256}, // 用户消息处理线程
     {"usr_ble_task", 3, 0, 128, 128},
-    {"app_msg_handle", 3, 0, 128, 128},
+    /*
+        app_msg 任务要跑：printf + 动画参数映射 + led_strip_rgb_schedule()
+        (里面还有 ls_set_colors / WS2812FX_* 调用)，
+        128(words)=512字节 太小，栈溢出会把堆和其它任务的数据写坏 -> 复位
+    */
+    {"app_msg", 3, 0, 512, 128},
     {0, 0},
 };
 

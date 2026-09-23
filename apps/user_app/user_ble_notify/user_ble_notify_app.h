@@ -3,7 +3,7 @@
 
 #include "typedef.h"
 #include "user_rtc.h"
-
+#include "app_msg_typedef.h"
 
 void user_ble_notify_brightness(u8 brightness);
 void user_ble_notify_speed(u8 speed);
@@ -23,5 +23,6 @@ void user_ble_notify_sound_control_type(u8 type);
 void user_ble_notify_sound_control_mode(u8 mode);
 void user_ble_notify_sound_control_sensitivity(u8 sensitivity);
 
+void user_ble_notify_anim_info(app_msg_anim_info_t *info);
 
 #endif
