@@ -98853,7 +98853,7 @@
 
 1719196543 d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\hardware\hardware.h
 
-1787100946 d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strand_effect.h
+1790216773 d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strand_effect.h
 	"cpu.h"
 	"led_strip_sys.h"
 	"WS2812FX.H"
@@ -98901,13 +98901,14 @@
 	<stdint.h>
 	"ws2812_bsp.h"
 
-1789379847 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_rgb_anim.c
+1790216787 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_rgb_anim.c
 	"led_strip_rgb_anim.h"
 	"WS2812FX.H"
 	"led_strip_rgb_schedule.h"
 	"led_strip_driver.h"
 	"ws2812fx_tool.h"
 	"Adafruit_NeoPixel.H"
+	"user_config.h"
 
 1789376256 d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_rgb_anim.h
 	"typedef.h"
@@ -98919,7 +98920,7 @@
 
 1761791593 d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\ws2812-fx-lib\ws2812fx_c\ws2812fx_tool.h
 
-1790157102 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_rgb_app.c
+1790221276 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_rgb_app.c
 	"led_strip_rgb_app.h"
 	"led_strip_rgb_schedule.h"
 	"led_strand_effect.h"
@@ -98934,11 +98935,12 @@
 	"led_strand_effect.h"
 	"app_msg_typedef.h"
 
-1790150261 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_rgb_schedule.c
+1790241836 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_rgb_schedule.c
 	"led_strip_rgb_schedule.h"
 	"led_strip_driver.h"
 	"WS2812FX.H"
 	"led_strip_rgb_anim.h"
+	"led_strip_rgb_scene_schedule.h"
 	"Adafruit_NeoPixel.H"
 	"ws2812fx_effect.h"
 	"user_include.h"
@@ -98959,9 +98961,9 @@
 	"user_include.h"
 	"save_flash.h"
 
-1790068763 d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\protocol\dp_data_tran.h
+1790216773 d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\protocol\dp_data_tran.h
 
-1789376278 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_voice.c
+1790242340 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_voice.c
 	"led_strip_voice.h"
 	"asm/adc_api.h"
 	"led_strip_driver.h"
@@ -98970,7 +98972,7 @@
 	"led_strip_white_schedule.h"
 	"led_strip_rgb_anim.h"
 
-1786757551 d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_voice.h
+1790241836 d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_voice.h
 	"led_strand_effect.h"
 
 1782118607 d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_white_schedule.h
@@ -99011,10 +99013,10 @@
 	"typedef.h"
 	"Adafruit_NeoPixel.H"
 
-1790157241 d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\protocol\app_msg_typedef.h
+1790229896 d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\protocol\app_msg_typedef.h
 	"typedef.h"
 
-1790070932 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\protocol\dp_data_tran.c
+1790216787 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\protocol\dp_data_tran.c
 	"cpu.h"
 	"led_strip_sys.h"
 	"paint_tool.h"
@@ -100572,7 +100574,7 @@
 	"ble_multi_profile.h"
 	"app_msg_handle.h"
 
-1790145467 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\user_main.c
+1790216289 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\user_main.c
 	"user_config.h"
 	"user_include.h"
 	"includes.h"
@@ -100581,6 +100583,7 @@
 	"save_flash.h"
 	"led_strip_rgb_schedule.h"
 	"led_strip_rgb_app.h"
+	"led_strip_rgb_scene_schedule.h"
 	"user_ble_notify.h"
 	"user_rtc.h"
 
@@ -100608,7 +100611,7 @@
 	"user_rtc.h"
 	"app_msg_typedef.h"
 
-1790153624 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\user_ble_notify\user_ble_notify_app.c
+1790221068 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\user_ble_notify\user_ble_notify_app.c
 	"user_ble_notify_app.h"
 	"user_ble_notify.h"
 	"led_strand_effect.h"
@@ -100625,16 +100628,61 @@
 	"user_thread_communication.h"
 	"os_api.h"
 
-1790156633 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\protocol\app_msg_handle.c
+1790233696 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\protocol\app_msg_handle.c
 	"app_msg_handle.h"
 	"typedef.h"
 	"app_msg_typedef.h"
 	"os_cpu.h"
 	<string.h>
 	"led_strand_effect.h"
+	"led_strip_rgb_app.h"
+	"led_strip_rgb_scene.h"
+	"led_strip_rgb_scene_schedule.h"
 	"Adafruit_NeoPixel.h"
 	"user_rtc.h"
 	"user_ble_notify_app.h"
 	"user_thread_communication.h"
 	"user_config.h"
+
+1790231193 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_rgb_scene.c
+	"led_strip_rgb_scene.h"
+	<string.h>
+	"WS2812FX.H"
+	"led_strand_effect.h"
+	"led_strip_driver.h"
+	"led_strip_sys.h"
+	"user_config.h"
+
+1790231217 d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_rgb_scene.h
+	"typedef.h"
+	"app_msg_typedef.h"
+	"led_strip_sys.h"
+
+1790241836 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_rgb_scene_anim.c
+	"led_strip_rgb_scene_anim.h"
+	<string.h>
+	"Adafruit_NeoPixel.H"
+	"WS2812FX.H"
+	"led_strip_rgb_scene.h"
+	"led_strip_voice.h"
+	"user_config.h"
+	"ws2812fx_tool.h"
+
+1790241836 d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_rgb_scene_anim.h
+	"typedef.h"
+
+1790241836 source:d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_rgb_scene_schedule.c
+	"led_strip_rgb_scene_schedule.h"
+	<string.h>
+	"WS2812FX.H"
+	"app_msg_handle.h"
+	"led_strand_effect.h"
+	"led_strip_driver.h"
+	"led_strip_rgb_scene.h"
+	"led_strip_rgb_scene_anim.h"
+	"os_cpu.h"
+	"user_config.h"
+
+1790241836 d:\project\2026-07-23-世纪光电-light flow-ac6329c-sop16\code\project-2026-07-23-ac6329c-sop16\apps\user_app\led_strip\led_strip_rgb_scene_schedule.h
+	"typedef.h"
 

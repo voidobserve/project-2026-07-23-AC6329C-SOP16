@@ -915,6 +915,18 @@
 		<Unit filename="../../../user_app/led_strip/led_strip_rgb_schedule.c">
 			<Option compilerVar="CC" />
 		</Unit>
+		<Unit filename="../../../user_app/led_strip/led_strip_rgb_scene.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="../../../user_app/led_strip/led_strip_rgb_scene.h" />
+		<Unit filename="../../../user_app/led_strip/led_strip_rgb_scene_anim.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="../../../user_app/led_strip/led_strip_rgb_scene_anim.h" />
+		<Unit filename="../../../user_app/led_strip/led_strip_rgb_scene_schedule.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="../../../user_app/led_strip/led_strip_rgb_scene_schedule.h" />
 		<Unit filename="../../../user_app/led_strip/led_strip_sys.c">
 			<Option compilerVar="CC" />
 		</Unit>

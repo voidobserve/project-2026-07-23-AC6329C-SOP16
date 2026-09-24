@@ -19,6 +19,28 @@ static volatile u8 flag_sound_triggered_in_led_strip_white = 0;
 // RGB 幻彩灯使用到的声控触发标志位
 static volatile u8 flag_sound_triggered_in_led_strip_rgb = 0;
 
+/*
+    声控电平（0 ~ 100），供幻彩灯的声控动画读取：
+    检测到声音时直接跳到当前的声音强度（快起），没有声音时逐次衰减（慢落）。
+    采样周期是 10ms（sound_handle() 在 10ms 任务里调用），
+    所以衰减步进取 4，声音停下后大约 0.25s 掉到 0。
+*/
+static volatile u8 voice_sound_level = 0;
+#define VOICE_SOUND_LEVEL_DECAY_STEP 4
+
+/*
+    声控「一拍」的判定门限：声音强度（0 ~ 100）达到这个值就算一次节拍。
+    灵敏度(fc_effect.music.s)调大时，同样的声音算出来的强度更大，拍子也更密。
+    太小 → 拍子太密（节奏一直在起点、滚动一直在加速）；
+    太大 → 拍子太少（看起来像没反应）。实测满音量时强度只有 60 左右，取 15。
+*/
+#define SOUND_BEAT_PERCENT 15
+
+u8 led_strip_voice_get_level(void)
+{
+    return voice_sound_level;
+}
+
 void sound_ctl_init(void)
 {
     adc_add_sample_ch(SOUND_CTL_ADC_CHANNEL);
@@ -209,6 +231,16 @@ void sound_handle(void)
     u32 adc_all = 0;
     u32 adc_ttl = 0;
 
+    /*
+        声控电平的慢落（快起见下面检测到声音的地方）：
+        放在这里是为了「即使本次采集到的 adc 异常、提前 return，电平也能正常衰减」
+    */
+    if (voice_sound_level > VOICE_SOUND_LEVEL_DECAY_STEP) {
+        voice_sound_level -= VOICE_SOUND_LEVEL_DECAY_STEP;
+    } else {
+        voice_sound_level = 0;
+    }
+
     // 记录adc值
     // 每次进入，采集一次ad值（即使不在声控模式，也会占用一些时间）
     adc = sound_ctl_get_adc_val();
@@ -266,29 +298,44 @@ void sound_handle(void)
         if (adc * fc_effect.music.s / 100 > adc_sum / adc_sum_n) {
             u32 adc_sum_avrg = adc_sum / adc_sum_n;
 
-            if (adc * led_strip_white.sensitivity / 100 > adc_sum_avrg) {
-                // 如果流星灯在声控模式，并且触发了声控
-                // if (DEVICE_ON == led_strip_white.is_dev_open &&
-                //     (15 == led_strip_white.mode_index ||
-                //      16 == led_strip_white.mode_index)) {
-                //     // 如果流星灯处于声控模式，会进入这里
-                //     flag_sound_triggered_in_led_strip_white = 1;
-                //     WS2812FX_triggered_by_led_strip_white();
-                // }
-
-                if (DEVICE_ON == fc_effect.on_off_flag &&
-                    fc_effect.Now_state == IS_light_music) {
-                    // 如果七彩灯处于声控模式，会进入这里
-                    flag_sound_triggered_in_led_strip_rgb = 1;
-                    // WS2812FX_triggered_by_colorful_lights();
-                    WS2812FX_triggered_by_led_strip_rgb();
-                }
-            }
-
             if (adc > adc_sum_avrg) {
+                /*
+                    声音强度：本次采集比长期平均值大多少（0 ~ 100）。
+                    灵敏度 fc_effect.music.s 越大，同样的声音算出来的强度越大。
+                    它是「声控电平」和「声控一拍」的共同来源：
+                        - 电平：快起慢落，能量 / 频谱用（led_strip_voice_get_level()）；
+                        - 一拍：强度达到 SOUND_BEAT_PERCENT 就算一次节拍，
+                          节奏 / 滚动用（get_sound_triggered_by_led_strip_rgb()）。
+                */
                 u8 adc_percent = (adc - adc_sum_avrg) * fc_effect.music.s / adc;
 
                 if (fc_effect.Now_state == IS_light_music) {
+                    // 声控电平的快起：直接跳到本次的声音强度
+                    if (adc_percent > voice_sound_level) {
+                        voice_sound_level = adc_percent;
+                    }
+
+                    /*
+                        声控「一拍」：
+                        原来这里用的是白光流星灯的灵敏度 led_strip_white.sensitivity，
+                        但 led_strip_white_schedule_init() 在本工程里根本没被调用，
+                        它一直是 0 → 0 > adc_sum_avrg 永远不成立
+                        → 触发标志永远不会置起来，靠「一拍」驱动的声控效果（节奏、频谱）
+                        就一直没有反应。现在改成和声控电平用同一个 adc_percent 判定，
+                        两边完全一致（灵敏度也只受 fc_effect.music.s 影响）。
+                    */
+                    if ((adc_percent >= SOUND_BEAT_PERCENT) &&
+                        (DEVICE_ON == fc_effect.on_off_flag)) {
+                        flag_sound_triggered_in_led_strip_rgb = 1;
+                        WS2812FX_triggered_by_led_strip_rgb();
+                    }
+
+                    /*
+                        下面两句只给旧的声控动画（led_strip_rgb_anim.c 里那批，
+                        已经不再被调度）用，保留不动；
+                        重新设计的声控动画（led_strip_rgb_scene_anim.c 里的
+                        led_strip_rgb_scene_anim_sound_*）读的是声控电平和触发标志。
+                    */
                     __led_strip_rgb_anim_sound_control_feq_rise_set__(
                         adc_percent);
                     music_open_close_set_trigger_len(adc_percent);

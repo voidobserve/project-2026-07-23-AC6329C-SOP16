@@ -7,6 +7,7 @@
 #include "save_flash.h"
 #include "led_strip_rgb_schedule.h"
 #include "led_strip_rgb_app.h"
+#include "led_strip_rgb_scene_schedule.h" // 重构后的场景调度
 #include "user_ble_notify.h"
 #include "user_rtc.h"
 
@@ -22,6 +23,9 @@ void WS2812_circle_task(void)
     WS2812FX_service();
 
     dot_runningh_handle();
+
+    // 同步旧通道（遥控器/DP 协议）对 fc_effect 的亮度、速度、开关修改
+    led_strip_rgb_scene_tick_10ms();
 }
 
 void user_init(void)
@@ -42,7 +46,10 @@ void user_init(void)
     WS2812FX_setBrightness(fc_effect.b);
 
     led_strip_rgb_schedule();
- 
+
+    // 用（flash 恢复出来的）app 动画参数启动重构后的场景动画
+    led_strip_rgb_scene_start();
+
     task_create(led_strip_rgb_app_msg_handle_task, NULL, "app_msg");
     task_create(user_main_task, NULL, "user_task");
 }

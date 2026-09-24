@@ -45,8 +45,13 @@ typedef struct
     u8 anim_dir;
     u8 anim_speed;         // 动画速度
     u8 anim_brightness;    // 动画亮度
-    u8 seg_size;           // 动画段大小(多少个灯为一组)
-    u8 seg_num;            // 动画段数量(有多少段)
+    /*
+        byte6 / byte7 的字段名与含义（以 `与app通信使用到的指令.md` 为准）：
+            byte6：保留，app 未使用该功能 —— 接收时忽略，上报时填 0
+            byte7：协议里叫「段数量」，实际含义是「多少个灯为一组」
+    */
+    u8 byte_reserved;       // byte6：保留字节
+    u8 leds_per_seg;       // byte7：多少个灯为一组
     u8 background_color_r; // 背景色，r分量
     u8 background_color_g; // 背景色，g分量
     u8 background_color_b; // 背景色，b分量

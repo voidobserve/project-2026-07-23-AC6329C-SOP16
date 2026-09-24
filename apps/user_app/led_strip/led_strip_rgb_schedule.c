@@ -2,7 +2,8 @@
 #include "led_strip_rgb_schedule.h"
 #include "led_strip_driver.h"
 #include "WS2812FX.H"
-#include "led_strip_rgb_anim.h" // 动画效果
+#include "led_strip_rgb_anim.h"            // 动画效果
+#include "led_strip_rgb_scene_schedule.h"  // 重构后的场景调度（声控模式走这里）
 #include "Adafruit_NeoPixel.H"
 #include "ws2812fx_effect.h"
 #include "user_include.h"
@@ -695,57 +696,19 @@ void __led_strip_rgb_schedule_in_custom__(void)
 
 void __led_strip_rgb_schedule_in_light_music__(void)
 {
-    mode_ptr mode;
-    u16 speed;
-    u8 options;
+#if USER_DEBUG_ENABLE
+    printf("%s %d\n", __FUNCTION__, __LINE__);
+    printf("fc_effect.music.m = %u\n", (u16)fc_effect.music.m);
+#endif
 
-    switch (fc_effect.music.m) {
-    case 0:
-        mode = &led_strip_rgb_anim_sound_control_star_random;
-        break;
-    case 1:
-        mode = led_strip_rgb_anim_sound_control_star_white;
-        break;
-    case 2:
-        mode = &led_strip_rgb_anim_sound_control_star_blue;
-        break;
-    case 3:
-        mode = &led_strip_rgb_anim_sound_control_open_and_close_both_sides;
-        break;
-    case 4:
-        mode = &led_strip_rgb_anim_sound_control_open_and_close_slide_to_center;
-        break;
-    case 5:
-        mode = &led_strip_rgb_anim_sound_control_rainbow_flash;
-        break;
-    case 6:
-        mode = &led_strip_rgb_anim_sound_control_feq_rise;
-        break;
-    case 7:
-        mode = &led_strip_rgb_anim_sound_control_feq_rise_bround_color;
-        break;
-    case 8:
-        mode = &led_strip_rgb_anim_sound_control_feq_rise_green_and_blue;
-        break;
-    case 9:
-        mode = &led_strip_rgb_anim_sound_control_energy;
-        break;
-    case 10:
-        mode = &led_strip_rgb_anim_sound_control_multi_color_flow;
-        break;
-    case 11:
-        mode = &led_strip_rgb_anim_sound_control_meteor;
-        break;
-
-    default:
-        return;
-        break;
-    }
-
-    speed = 100;
-    options = SIZE_MEDIUM | FADE_XSLOW;
-
-    led_strip_rgb_schedule_set_mode(mode, speed, options);
+    /*
+		声控模式：原来做好的声控动画不符合要求（没有考虑灯串数量），
+		已经按「能量 / 节奏 / 频谱 / 滚动」四个主题重新设计，并挪到重构后的场景层：
+			动画实现：led_strip_rgb_scene_anim.c 的 led_strip_rgb_scene_anim_sound_*
+			模式分发：led_strip_rgb_scene_schedule.c 的 led_strip_rgb_scene_sound_apply()
+		这里只做一次转发（fc_effect.music.m 就是 app 下发的声控模式索引 0 ~ 3）。
+	*/
+    led_strip_rgb_scene_sound_apply(fc_effect.music.m);
 }
 
 void led_strip_rgb_schedule(void)
@@ -755,7 +718,7 @@ void led_strip_rgb_schedule(void)
     u8 option = NO_OPTIONS;
 
 #if USER_DEBUG_ENABLE
-    printf("%s %d\n", __FUNCTION__, __LINE__); 
+    printf("%s %d\n", __FUNCTION__, __LINE__);
 #endif
 
     if (fc_effect.on_off_flag == DEVICE_OFF) {
@@ -792,7 +755,7 @@ void led_strip_rgb_schedule(void)
         speed = 100;
         option = FADE_GLACIAL;
 #if USER_DEBUG_ENABLE
-        printf("%s %d\n", __FUNCTION__, __LINE__);  
+        printf("%s %d\n", __FUNCTION__, __LINE__);
 #endif
         led_strip_rgb_schedule_set_mode(led_strip_rgb_mode, speed, option);
 #if USER_DEBUG_ENABLE

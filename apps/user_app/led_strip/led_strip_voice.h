@@ -28,6 +28,14 @@ void motor_sound_sensitivity_sub(void);
 u8 get_sound_triggered_by_led_strip_white(void);
 u8 get_sound_triggered_by_led_strip_rgb(void);
 
+/*
+    声控电平（0 ~ 100）：
+    检测到声音时直接跳到当前的声音强度（快起），没有声音时逐次衰减（慢落）。
+    幻彩灯的声控动画（能量、频谱）用它来表现「声音有多大」；
+    只判断「有没有声音」时用 get_sound_triggered_by_led_strip_rgb() 即可。
+*/
+u8 led_strip_voice_get_level(void);
+
 
 void sound_ctl_init(void);
 

@@ -5,7 +5,10 @@
 #include <string.h>
 
 #include "led_strand_effect.h"
-#include "Adafruit_NeoPixel.h" //
+#include "led_strip_rgb_app.h"
+#include "led_strip_rgb_scene.h"          // 重构后的场景数据层
+#include "led_strip_rgb_scene_schedule.h" // 重构后的场景调度
+#include "Adafruit_NeoPixel.h"            //
 
 #include "user_rtc.h"
 #include "user_ble_notify_app.h"
@@ -71,6 +74,7 @@ static void app_msg_set_sound_control_by_phone_handle(const u8 *payload,
 static void app_msg_set_static_color_handle(const u8 *payload, u16 len);
 static void app_msg_set_brightness_handle(const u8 *payload, u16 len);
 static void app_msg_set_speed_handle(const u8 *payload, u16 len);
+static void app_msg_anim_info_sync_from_scene(void);
 
 typedef void (*app_msg_cmd_handler_t)(const u8 *payload, u16 len);
 
@@ -161,8 +165,8 @@ void app_msg_anim_info_init(void)
     app_msg_anim_info.anim_dir = 0;           // 正向
     app_msg_anim_info.anim_speed = 80;        // 速度
     app_msg_anim_info.anim_brightness = 100;  // 亮度
-    app_msg_anim_info.seg_size = 1;           // 段大小
-    app_msg_anim_info.seg_num = 1;            // 段数量
+    app_msg_anim_info.byte_reserved = 0;      // byte6：保留字节
+    app_msg_anim_info.leds_per_seg = 1;       // 多少个灯为一组
     app_msg_anim_info.background_color_r = 0; // 背景色
     app_msg_anim_info.background_color_g = 0; // 背景色
     app_msg_anim_info.background_color_b = 0; // 背景色
@@ -221,8 +225,8 @@ static void app_msg_color_light_handle(const u8 *payload, u16 len)
     new_info.anim_dir = payload[i++];
     new_info.anim_speed = payload[i++];
     new_info.anim_brightness = payload[i++];
-    new_info.seg_size = payload[i++];
-    new_info.seg_num = payload[i++];
+    new_info.byte_reserved = payload[i++]; // byte6：保留，接收时忽略
+    new_info.leds_per_seg = payload[i++];  // byte7：多少个灯为一组
 
     new_info.background_color_r = payload[i++];
     new_info.background_color_g = payload[i++];
@@ -250,14 +254,32 @@ static void app_msg_color_light_handle(const u8 *payload, u16 len)
     OS_EXIT_CRITICAL();
 
 #if USER_DEBUG_ENABLE
-    // 打印接收到的数据
+    /*
+        打印 app 下发的原始参数，方便核对协议字段的位置：
+        mode_idx / dir / speed / brightness / reserved(byte6) / leds_per_seg(byte7) / color_num
+    */
+    printf("anim info: mode 0x%02x, dir %u, speed %u, brightness %u, "
+           "reserved %u, leds_per_seg %u, bg %u-%u-%u, color_num %u\n",
+           (u16)new_info.mode_idx, (u16)new_info.anim_dir,
+           (u16)new_info.anim_speed, (u16)new_info.anim_brightness,
+           (u16)new_info.byte_reserved, (u16)new_info.leds_per_seg,
+           (u16)new_info.background_color_r, (u16)new_info.background_color_g,
+           (u16)new_info.background_color_b, (u16)new_info.color_num);
 #endif
 
     // 通知其他模块，幻彩灯模式发生了变化
     // user_thread_communication_send_msg(
     //     LED_STRIP_RGB_TASK_NAME,
     //     USER_THREAD_COMM_MSG_TYPE_APP_MSG_ANIM_INFO_UPDATE);
-    led_strip_rgb_apply_anim_info(&app_msg_anim_info);
+
+    /*
+        执行 app 下发的动画指令：
+        场景层负责把指令翻译成 WS2812FX 的段参数，并启动重构后的动画效果
+    */
+    led_strip_rgb_scene_set_from_app_info(
+        (app_msg_anim_info_t *)&app_msg_anim_info);
+    led_strip_rgb_scene_apply();
+    app_msg_anim_info_sync_from_scene();
 
     user_ble_notify_anim_info((app_msg_anim_info_t *)&app_msg_anim_info);
 }
@@ -272,6 +294,20 @@ void app_msg_anim_info_get(app_msg_anim_info_t *info)
     // 获取接收到的数据
     memcpy(info, (const void *)&app_msg_anim_info, sizeof(app_msg_anim_info_t));
     OS_EXIT_CRITICAL();
+}
+
+/**
+ * @brief 把当前场景回写到动画参数缓存
+ *
+ * @note 动画参数缓存会被保存进 flash，重启后由它恢复上一次的显示效果，
+ *       所以「场景被改动」之后都要同步一次（静态色、亮度、速度等指令同样会改场景）
+ */
+static void app_msg_anim_info_sync_from_scene(void)
+{
+    app_msg_anim_info_t info = {0};
+
+    led_strip_rgb_scene_to_app_info(&info);
+    app_msg_anim_info_set(&info);
 }
 
 /**
@@ -307,9 +343,12 @@ static void app_msg_syn_handle(const u8 *payload, u16 len)
     user_ble_notify_alarm_info(1, alarm[1]);
     user_ble_notify_alarm_info(2, alarm[2]);
 
-    // app发送同步指令时，要整理当前动画的信息，并返回给app
-    // app_msg_anim_info_t -> app
-    app_msg_anim_info_get(&info);
+    /*
+        app 发送同步指令时，把当前场景整理成动画信息返回给 app：
+        无论上一次下发的是动画指令，还是静态色 / 亮度 / 速度指令，
+        app 读到的都是当前真实的显示状态
+    */
+    led_strip_rgb_scene_to_app_info(&info);
     user_ble_notify_anim_info(&info);
 }
 
@@ -323,8 +362,9 @@ static void app_msg_power_switch_handle(const u8 *payload, u16 len)
 {
     (void)len;
 
-    fc_effect.on_off_flag = payload[2];
-    led_strip_rgb_schedule();
+    // 开灯/关灯：交给场景层跑开机动画或渐灭动画
+    led_strip_rgb_scene_set_power(payload[2]);
+    led_strip_rgb_scene_apply();
     user_ble_notify_dev_pwr_sta(fc_effect.on_off_flag);
 }
 
@@ -441,51 +481,48 @@ static void app_msg_set_sound_control_sensitivity_handle(const u8 *payload,
 static void app_msg_set_sound_control_by_phone_handle(const u8 *payload,
                                                       u16 len)
 {
-    u8 brightness_percent;
     (void)len;
-    set_static_mode(payload[2], payload[3], payload[4]);
 
-    brightness_percent = payload[5];
-    if (brightness_percent > 100) {
-        brightness_percent = 100;
-    }
+    /*
+        手机音乐律动：先按手机下发的颜色设置为静态色，
+        之后亮度由手机端跟随音乐不断下发，这里先把本次的亮度用上
+    */
+    led_strip_rgb_scene_set_static_color(payload[2], payload[3], payload[4]);
+    led_strip_rgb_scene_apply();
 
-    fc_effect.app_b = brightness_percent;
-    fc_effect.b = (u16)brightness_percent * (255 - 25) / 100 + 25;
-    WS2812FX_setBrightness(fc_effect.b);
+    // 亮度由场景层钳位到 0 ~ 100，并同步给 WS2812FX
+    led_strip_rgb_scene_set_brightness(payload[5]);
+    app_msg_anim_info_sync_from_scene();
 }
 
 static void app_msg_set_static_color_handle(const u8 *payload, u16 len)
 {
     (void)len;
-    set_static_mode(payload[2], payload[3], payload[4]);
+
+    // 静态彩色：设置颜色后重新启动场景（模式切为静态色）
+    // led_strip_rgb_scene_set_static_color(payload[2], payload[3], payload[4]);
+    led_strip_rgb_scene_set_static_color(payload[3], payload[4], payload[5]);
+    led_strip_rgb_scene_apply();
+    app_msg_anim_info_sync_from_scene();
 }
 
 static void app_msg_set_brightness_handle(const u8 *payload, u16 len)
 {
-
     (void)len;
-    fc_effect.app_b = payload[2];
-    if (fc_effect.app_b > 100) {
-        fc_effect.app_b = 100;
-    }
 
-    fc_effect.b = (u16)fc_effect.app_b * (255 - 25) / 100 + 25;
-    WS2812FX_setBrightness(fc_effect.b);
+    // 亮度只改变 WS2812FX 的全局亮度，不需要重启动画
+    led_strip_rgb_scene_set_brightness(payload[2]);
+    app_msg_anim_info_sync_from_scene();
     user_ble_notify_brightness(fc_effect.app_b);
 }
 
 static void app_msg_set_speed_handle(const u8 *payload, u16 len)
 {
-    u8 speed = payload[2];
     (void)len;
-    fc_effect.app_speed = speed;
-    fc_effect.dream_scene.speed = 500 - ((u32)500 * speed / 100);
-    if (fc_effect.dream_scene.speed <= get_max_speed()) {
-        fc_effect.dream_scene.speed = get_max_speed();
-    }
 
-    led_strip_rgb_schedule();
+    // 速度只改变帧间隔，动画可以从当前位置继续跑
+    led_strip_rgb_scene_set_speed(payload[2]);
+    app_msg_anim_info_sync_from_scene();
     user_ble_notify_speed(fc_effect.app_speed);
 }
 

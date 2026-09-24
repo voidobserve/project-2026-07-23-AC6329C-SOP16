@@ -188,7 +188,7 @@ u16 led_strip_rgb_anim_single_block_scan(void)
     }
 
     _seg_rt->counter_mode_step = 0;
-    _seg_rt->aux_param = 0; 
+    _seg_rt->aux_param = 0;
 
     while (_seg_rt->counter_mode_step < _seg_len) {
         for (j = 0; j < size; j++) {

@@ -72,7 +72,7 @@ void led_strip_rgb_apply_anim_info(app_msg_anim_info_t *info)
 #endif
 
     // 段大小(多少个灯为一组)
-    fc_effect.dream_scene.seg_size = info->seg_size;
+    fc_effect.dream_scene.seg_size = info->leds_per_seg;
     if (0 == fc_effect.dream_scene.seg_size) {
         fc_effect.dream_scene.seg_size = 1;
     }
@@ -192,6 +192,7 @@ void led_strip_rgb_apply_anim_info(app_msg_anim_info_t *info)
         fc_effect.dream_scene.rgb[1].r = info->background_color_r;
         fc_effect.dream_scene.rgb[1].g = info->background_color_g;
         fc_effect.dream_scene.rgb[1].b = info->background_color_b;
+        fc_effect.dream_scene.c_n = 2;
         break;
     case APP_MSG_MOD_IDX_METEOR_SHOWER:
         fc_effect.dream_scene.change_type = MODE_SINGLE_METEOR;
