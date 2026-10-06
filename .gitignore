@@ -1,0 +1,24 @@
+# ---- 编辑器 / 工作笔记（不入库）----
+.obsidian/
+agent/
+
+# ---- 编译产物：CodeBlocks 工程 ----
+apps/spp_and_le/board/bd19/obj/
+apps/spp_and_le/board/bd19/*.depend
+apps/spp_and_le/board/bd19/*.layout
+
+# ---- 编译产物：JieLi SDK ----
+cpu/bd19/tools/sdk.elf*
+cpu/bd19/tools/sdk.lst
+cpu/bd19/tools/sdk.map
+cpu/bd19/tools/app.bin
+cpu/bd19/tools/data_code.bin
+cpu/bd19/tools/ota.bin
+cpu/bd19/tools/ota_debug.bin
+cpu/bd19/tools/ex_mcu.bin
+cpu/bd19/tools/ex_mcu_220.bin
+cpu/bd19/tools/download/data_trans/app.bin
+cpu/bd19/tools/download/data_trans/jl_isd.bin
+cpu/bd19/tools/download/data_trans/jl_isd.fw
+cpu/bd19/tools/download/data_trans/update.ufw
+cpu/bd19/sdk_used_list.used-*
