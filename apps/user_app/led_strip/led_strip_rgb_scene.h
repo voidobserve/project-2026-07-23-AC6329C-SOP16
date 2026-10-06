@@ -57,7 +57,8 @@ typedef struct
     u8 brightness;    // 动画亮度，单位：百分比，0 ~ 100
     u8 speed;         // 动画速度，单位：百分比，0 ~ 100（100 最快）
     u8 byte_reserved; // 保留，未使用
-    u8 leds_per_seg; // 多少个灯为一组（协议 byte7，协议里的字段名叫「段数量」，0 视为 1）
+    u8 leds_per_seg; // 多少个灯为一组（协议 byte7，协议里的字段名叫「段数量」；
+                     // 0 或超过设备灯数 = 所有灯为同一组，由动画层按真实灯数换算）
     color_t background; // 动画底色，默认黑色
     u8 color_num;       // 动画使用的颜色数量（不包含底色）
     color_t colors[LED_STRIP_RGB_SCENE_COLOR_MAX]; // 动画使用的颜色数据
@@ -98,9 +99,10 @@ void led_strip_rgb_scene_set_colors(const color_t *colors, u8 color_num,
 
 /* -------------------------------- 有效值/换算接口 ------------------------------- */
 
-// 获取「多少个灯为一组」（app 协议 byte7，协议里叫「段数量」）：至少为 1
-// 上限交给动画层按当前真实的段长度(_seg_len)去夹，这里不夹，
-// 否则 app 下发 5 会被夹成 1，动画就变成「每个灯一种颜色」
+// 获取「多少个灯为一组」（app 协议 byte7，协议里叫「段数量」）：原样返回，不做夹紧
+// byte7 = 0 或超过设备灯数都表示「所有灯为同一组」，
+// 这两种情况都由动画层按当前真实的段长度(_seg_len)换算成整条灯带（这里不换算，
+// 否则 app 下发 5 会被夹成 1，动画就变成「每个灯一种颜色」）
 u8 led_strip_rgb_scene_get_leds_per_seg(void);
 
 // 颜色数量有效值：至少为 1

@@ -57,7 +57,13 @@ static void scene_mirror_to_fc_effect(void)
 
     fc_effect.dream_scene.direction =
         led_strip_rgb_scene.dir ? IS_back : IS_forward;
-    fc_effect.dream_scene.seg_size = led_strip_rgb_scene.leds_per_seg;
+    /*
+        旧通道(fc_effect)的动画会把 seg_size 直接当作循环步长，
+        seg_size = 0 会让它们死循环/除零，所以镜像给旧通道时 0 按 1 个灯处理；
+        新场景里仍然保留 0 表示「所有灯为同一组」。
+    */
+    fc_effect.dream_scene.seg_size =
+        led_strip_rgb_scene.leds_per_seg ? led_strip_rgb_scene.leds_per_seg : 1;
 
     // 颜色池：fc_effect 的颜色池只有 MAX_NUM_COLORS 个，超出部分直接丢弃
     color_num = led_strip_rgb_scene_get_color_num();
@@ -118,19 +124,17 @@ u8 led_strip_rgb_scene_brightness_to_255(u8 percent)
 
 u8 led_strip_rgb_scene_get_leds_per_seg(void)
 {
-    u8 leds_per_seg = led_strip_rgb_scene.leds_per_seg;
-
     /*
-		只做「至少 1 个灯」的下限保护，不再用灯带长度(fc_effect.led_num)去夹：
-		灯带长度可能比实际短、或者 app 还没下发，用它来夹会把「多少个灯为一组」改坏
-		（例如 app 下发 5 被夹成 1，动画就变成「每个灯一种颜色」）。
-		上限交给动画层按当前真实的段长度(_seg_len)去夹。
-	*/
-    if (0 == leds_per_seg) {
-        leds_per_seg = 1;
-    }
+		原样返回 app 下发的「多少个灯为一组」（协议 byte7）：
+			- byte7 = 0  表示「所有灯为同一组」；
+			- byte7 超过当前设备所有灯的数量时，也表示「所有灯为同一组」；
 
-    return leds_per_seg;
+		这两种「同一组」都需要知道真实的灯数(_seg_len)才能换算，
+		场景层拿不到（也不能用 fc_effect.led_num 去夹：它可能偏小、或者 app 还没下发，
+		之前把 app 下发的 5 夹成 1，动画就变成「每个灯一种颜色」），
+		所以统一交给动画层的 anim_leds_per_seg() 换算成整条灯带。
+	*/
+    return led_strip_rgb_scene.leds_per_seg;
 }
 
 u8 led_strip_rgb_scene_get_color_num(void)
@@ -202,13 +206,13 @@ void led_strip_rgb_scene_set_from_app_info(const app_msg_anim_info_t *info)
         return;
     }
 
-    // 多少个灯为一组
+    /*
+        多少个灯为一组（协议 byte7）：
+        byte7 = 0（或超过设备灯数）都表示「所有灯为同一组」，
+        这里原样保存，由动画层按真实的段长度(_seg_len)换算成整条灯带。
+    */
     led_strip_rgb_scene.leds_per_seg = info->leds_per_seg;
     led_strip_rgb_scene.byte_reserved = 0;
-    if (led_strip_rgb_scene.leds_per_seg == 0) {
-        // 如果没有设置多少个灯为一组，默认设置为 1
-        led_strip_rgb_scene.leds_per_seg = 1;
-    }
 
     // 方向
     led_strip_rgb_scene.dir = info->anim_dir ? LED_STRIP_RGB_SCENE_DIR_REVERSE

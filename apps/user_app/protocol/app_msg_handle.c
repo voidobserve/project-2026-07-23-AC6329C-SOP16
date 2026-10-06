@@ -155,8 +155,19 @@ static const app_msg_cmd_entry_t app_msg_cmd_table[] = {
 #define APP_MSG_CMD_TABLE_SIZE                                                 \
     (sizeof(app_msg_cmd_table) / sizeof(app_msg_cmd_table[0]))
 
-// 只用在当前源文件，存放当前app传递过来的动画数据
-static volatile app_msg_anim_info_t app_msg_anim_info = {0};
+// app 下发的动画参数：处理完成后统一存到这个全局变量，其他模块直接读取
+volatile app_msg_anim_info_t app_msg_anim_info = {0};
+
+/*
+    指令解析缓冲区（模块级静态变量，不放在线程栈上）
+    ------------------------------------------------------------------
+    app_msg_anim_info_t 有几十个字节，如果放局部变量，每进一次处理函数就要在
+    app_msg 任务的栈上开一份（该任务的栈本来就紧张），所以统一用这个模块级缓冲区：
+    需要「拼一份新的参数」的地方（解析指令、同步场景）都先写它，
+    再整体发布到 app_msg_anim_info。
+    ------------------------------------------------------------------
+*/
+static volatile app_msg_anim_info_t app_msg_anim_info_buf;
 
 void app_msg_anim_info_init(void)
 {
@@ -204,7 +215,11 @@ static void app_msg_color_light_handle(const u8 *payload, u16 len)
 {
     u8 i = 0;
     u8 color_buf_idx = 0;
-    app_msg_anim_info_t new_info = {0};
+    /*
+        指令直接解析到模块级缓冲区（不放局部变量：app_msg_anim_info_t 有几十个字节，
+        放在栈上要占用 app_msg 任务的栈），见文件上方的说明
+    */
+    app_msg_anim_info_t *info = (app_msg_anim_info_t *)&app_msg_anim_info_buf;
 
 #if USER_DEBUG_ENABLE
     printf("%s %d", __FUNCTION__, __LINE__);
@@ -218,24 +233,24 @@ static void app_msg_color_light_handle(const u8 *payload, u16 len)
     }
 
     // 传递过来的数据是大端，需要转换成小端
-    new_info.format_head = (uint16_t)payload[i++];
-    new_info.format_head |= (uint16_t)payload[i++] << 8;
+    info->format_head = (uint16_t)payload[i++];
+    info->format_head |= (uint16_t)payload[i++] << 8;
 
-    new_info.mode_idx = payload[i++];
-    new_info.anim_dir = payload[i++];
-    new_info.anim_speed = payload[i++];
-    new_info.anim_brightness = payload[i++];
-    new_info.byte_reserved = payload[i++]; // byte6：保留，接收时忽略
-    new_info.leds_per_seg = payload[i++];  // byte7：多少个灯为一组
+    info->mode_idx = payload[i++];
+    info->anim_dir = payload[i++];
+    info->anim_speed = payload[i++];
+    info->anim_brightness = payload[i++];
+    info->byte_reserved = payload[i++]; // byte6：保留，接收时忽略
+    info->leds_per_seg = payload[i++];  // byte7：多少个灯为一组
 
-    new_info.background_color_r = payload[i++];
-    new_info.background_color_g = payload[i++];
-    new_info.background_color_b = payload[i++];
-    new_info.color_num = payload[i++];
+    info->background_color_r = payload[i++];
+    info->background_color_g = payload[i++];
+    info->background_color_b = payload[i++];
+    info->color_num = payload[i++];
 
     // 颜色数据长度超出了内部缓冲区大小，或者是颜色数据长度小于一个颜色对应的长度
-    if (new_info.color_num > APP_MSG_COLOR_NUM_MAX ||
-        len < ((15 - 3) + (new_info.color_num * 3))) {
+    if (info->color_num > APP_MSG_COLOR_NUM_MAX ||
+        len < ((15 - 3) + (info->color_num * 3))) {
 #if USER_DEBUG_ENABLE
         printf("%s %d", __FUNCTION__, __LINE__);
         printf("function return\n");
@@ -243,28 +258,29 @@ static void app_msg_color_light_handle(const u8 *payload, u16 len)
         return;
     }
 
-    for (; (i < len && color_buf_idx < (new_info.color_num * 3));
+    for (; (i < len && color_buf_idx < (info->color_num * 3));
          i++, color_buf_idx++) {
-        new_info.color_buf[color_buf_idx] = payload[i];
+        info->color_buf[color_buf_idx] = payload[i];
     }
 
-    OS_ENTER_CRITICAL();
-    // 更新接收到的数据
-    memcpy((void *)&app_msg_anim_info, &new_info, sizeof(new_info));
-    OS_EXIT_CRITICAL();
+    /*
+        处理完成，存到全局变量（其他模块直接读取该全局变量），
+        结构体是一个整体，写入用临界区保护
+    */
+    app_msg_anim_info_set(info);
 
 #if USER_DEBUG_ENABLE
     /*
         打印 app 下发的原始参数，方便核对协议字段的位置：
         mode_idx / dir / speed / brightness / reserved(byte6) / leds_per_seg(byte7) / color_num
     */
-    printf("anim info: mode 0x%02x, dir %u, speed %u, brightness %u, "
-           "reserved %u, leds_per_seg %u, bg %u-%u-%u, color_num %u\n",
-           (u16)new_info.mode_idx, (u16)new_info.anim_dir,
-           (u16)new_info.anim_speed, (u16)new_info.anim_brightness,
-           (u16)new_info.byte_reserved, (u16)new_info.leds_per_seg,
-           (u16)new_info.background_color_r, (u16)new_info.background_color_g,
-           (u16)new_info.background_color_b, (u16)new_info.color_num);
+    // printf("anim info: mode 0x%02x, dir %u, speed %u, brightness %u, "
+    //        "reserved %u, leds_per_seg %u, bg %u-%u-%u, color_num %u\n",
+    //        (u16)info->mode_idx, (u16)info->anim_dir,
+    //        (u16)info->anim_speed, (u16)info->anim_brightness,
+    //        (u16)info->byte_reserved, (u16)info->leds_per_seg,
+    //        (u16)info->background_color_r, (u16)info->background_color_g,
+    //        (u16)info->background_color_b, (u16)info->color_num);
 #endif
 
     // 通知其他模块，幻彩灯模式发生了变化
@@ -276,12 +292,14 @@ static void app_msg_color_light_handle(const u8 *payload, u16 len)
         执行 app 下发的动画指令：
         场景层负责把指令翻译成 WS2812FX 的段参数，并启动重构后的动画效果
     */
-    led_strip_rgb_scene_set_from_app_info(
-        (app_msg_anim_info_t *)&app_msg_anim_info);
+    led_strip_rgb_scene_set_from_app_info(info);
     led_strip_rgb_scene_apply();
+
+    // 场景可能做过校验/换算，把它回写进全局参数缓存
     app_msg_anim_info_sync_from_scene();
 
-    user_ble_notify_anim_info((app_msg_anim_info_t *)&app_msg_anim_info);
+    // 上报当前真实的动画状态给 app（同步后缓冲区里就是场景的真实状态）
+    user_ble_notify_anim_info(info);
 }
 
 void app_msg_anim_info_get(app_msg_anim_info_t *info)
@@ -304,11 +322,18 @@ void app_msg_anim_info_get(app_msg_anim_info_t *info)
  */
 static void app_msg_anim_info_sync_from_scene(void)
 {
-    app_msg_anim_info_t info = {0};
+    // 复用模块级缓冲区，避免在栈上再开一份 app_msg_anim_info_t
+    app_msg_anim_info_t *info = (app_msg_anim_info_t *)&app_msg_anim_info_buf;
 
-    led_strip_rgb_scene_to_app_info(&info);
-    app_msg_anim_info_set(&info);
+    led_strip_rgb_scene_to_app_info(info);
+    app_msg_anim_info_set(info);
 }
+
+/*
+    同步指令要用到的缓存（模块级静态变量，不放线程栈上）
+*/
+// 三个闹钟信息
+static user_alarm_t app_msg_sync_alarm_buf[3];
 
 /**
  * @brief app 同步指令（0x01 0x03）对应的处理函数
@@ -318,12 +343,15 @@ static void app_msg_anim_info_sync_from_scene(void)
  */
 static void app_msg_syn_handle(const u8 *payload, u16 len)
 {
-    user_alarm_t alarm[3] = {0};
-    app_msg_anim_info_t info = {0};
+    // 都取模块级缓冲区，不占用 app_msg 任务的栈
+    user_alarm_t *alarm = app_msg_sync_alarm_buf;
+    app_msg_anim_info_t *info = (app_msg_anim_info_t *)&app_msg_anim_info_buf;
 
     // 同步指令不带参数，加void修饰，防止编译器报错
     (void)payload;
     (void)len;
+
+    memset(alarm, 0, sizeof(app_msg_sync_alarm_buf));
 
     user_ble_notify_dev_type(0x01);                     // 0x01 灯具类型：RGB
     user_ble_notify_dev_pwr_sta(fc_effect.on_off_flag); // 设备总开关状态
@@ -348,8 +376,8 @@ static void app_msg_syn_handle(const u8 *payload, u16 len)
         无论上一次下发的是动画指令，还是静态色 / 亮度 / 速度指令，
         app 读到的都是当前真实的显示状态
     */
-    led_strip_rgb_scene_to_app_info(&info);
-    user_ble_notify_anim_info(&info);
+    led_strip_rgb_scene_to_app_info(info);
+    user_ble_notify_anim_info(info);
 }
 
 /**
@@ -406,6 +434,10 @@ static void app_msg_set_alarm_handle(const u8 *payload, u16 len)
     user_alarm_t alarm;
 
     (void)len;
+
+#if USER_DEBUG_ENABLE
+    printf("%s %d\n", __FUNCTION__, __LINE__);
+#endif
 
     alarm_idx = payload[1];
 

@@ -11,6 +11,16 @@
 //     (INSTRUCTION_PREFIX_LEN + 12 + APP_MSG_COLOR_BUF_MAX)
 #define APP_MSG_POST_BUF_MAX_LEN 100
 
+/*
+    app 下发的动画参数（处理完成后统一存到这个全局变量）
+    ------------------------------------------------------------------
+    其他模块需要使用时可以直接读取；
+    结构体是「一个整体」，不希望在读的过程中被写掉，所以读写请优先用
+    app_msg_anim_info_get() / app_msg_anim_info_set()（内部有临界区保护）。
+    ------------------------------------------------------------------
+*/
+extern volatile app_msg_anim_info_t app_msg_anim_info;
+
 void app_msg_anim_info_init(void);
 void app_msg_anim_info_set(app_msg_anim_info_t *info);
 

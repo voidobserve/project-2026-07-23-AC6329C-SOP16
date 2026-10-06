@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "WS2812FX.H"
-#include "app_msg_handle.h"    // app_msg_anim_info_get()
+#include "app_msg_handle.h"    // app_msg_anim_info（全局动画参数）
 #include "led_strand_effect.h" // 旧的 fc_effect（兼容用）
 #include "led_strip_driver.h"  // LED_STRIP_RGB_SEG_INDEX 等
 #include "led_strip_rgb_scene.h"
@@ -24,29 +24,42 @@ typedef struct
     u8 options;    // 固定段选项（不含方向）
 } led_strip_rgb_scene_mode_entry_t;
 
+// 动画索引和对应的函数映射表
 static const led_strip_rgb_scene_mode_entry_t led_strip_rgb_scene_mode_table[] =
     {
+        // 静态色
         {APP_MSG_MOD_IDX_STATIC, led_strip_rgb_scene_anim_static, NO_OPTIONS},
+        // 渐变
         {APP_MSG_MOD_IDX_GRADUAL, led_strip_rgb_scene_anim_gradual, NO_OPTIONS},
+        // 跳变
         {APP_MSG_MOD_IDX_JUMP, led_strip_rgb_scene_anim_jump, NO_OPTIONS},
+        // 呼吸
         {APP_MSG_MOD_IDX_BREATH, led_strip_rgb_scene_anim_breath, NO_OPTIONS},
+        // 流水
         {APP_MSG_MOD_IDX_RUNNING_WATER, led_strip_rgb_scene_anim_running_water,
          NO_OPTIONS},
+        // 堆积
         {APP_MSG_MOD_IDX_ACCUMULATION, led_strip_rgb_scene_anim_accumulation,
          NO_OPTIONS},
         // 星空：随机点闪，用 FADE_* 让亮点留下余晖
         // （其它动画都是每帧整条重画，不调 fade_out，所以不需要 FADE_*）
         {APP_MSG_MOD_IDX_STARRY_SKY, led_strip_rgb_scene_anim_starry_sky,
          FADE_XSLOW},
+        // 星云
         {APP_MSG_MOD_IDX_NEBULA, led_strip_rgb_scene_anim_nebula, NO_OPTIONS},
         // 流星/流星雨：每帧整条重画
         {APP_MSG_MOD_IDX_METEOR, led_strip_rgb_scene_anim_meteor, NO_OPTIONS},
+        // 流星雨
         {APP_MSG_MOD_IDX_METEOR_SHOWER, led_strip_rgb_scene_anim_meteor_shower,
          NO_OPTIONS},
         // 开合：dir = 0 开幕，dir = 1 闭幕
         {APP_MSG_MOD_IDX_OPENING_AND_CLOSING,
          led_strip_rgb_scene_anim_open_close, NO_OPTIONS},
+        // 跑动
         {APP_MSG_MOD_IDX_RUN, led_strip_rgb_scene_anim_run, NO_OPTIONS},
+        // 跑动集合：内置多个跑动子动画循环执行
+        {APP_MSG_MOD_IDX_RUN_COLLECTION,
+         led_strip_rgb_scene_anim_run_collection, NO_OPTIONS},
 };
 
 #define LED_STRIP_RGB_SCENE_MODE_NUM                                           \
@@ -73,7 +86,7 @@ led_strip_rgb_scene_mode_find(u8 mode_idx)
 	普通动画模式（app 的动画指令）和声控模式都走这里。
 */
 static void led_strip_rgb_scene_start_mode(mode_ptr mode, u8 seg_options,
-                                          u16 frame_interval_ms)
+                                           u16 frame_interval_ms)
 {
     /*
 		WS2812FX_service() 在 10ms 定时里跑，重配置段参数要和它互斥
@@ -135,7 +148,7 @@ void led_strip_rgb_scene_apply(void)
     led_strip_rgb_scene_start_mode(mode, seg_options, frame_interval_ms);
 
 #if USER_DEBUG_ENABLE
-   
+
     printf("mode idx == %u\n", (u16)led_strip_rgb_scene.mode_idx);
     printf("dir == %u\n", (u16)led_strip_rgb_scene.dir);
     printf("speed == %u(%ums)\n", (u16)led_strip_rgb_scene.speed,
@@ -148,7 +161,7 @@ void led_strip_rgb_scene_apply(void)
            (u16)led_strip_rgb_scene.background.r,
            (u16)led_strip_rgb_scene.background.g,
            (u16)led_strip_rgb_scene.background.b);
-	printf("dev pwr sta == %u\n", (u16)led_strip_rgb_scene.pwr_sta);
+    printf("dev pwr sta == %u\n", (u16)led_strip_rgb_scene.pwr_sta);
 
 #endif
 }
@@ -204,7 +217,6 @@ void led_strip_rgb_scene_sound_apply(u8 sound_mode)
 
 void led_strip_rgb_scene_start(void)
 {
-    app_msg_anim_info_t info = {0};
     u8 brightness_percent;
     u8 speed_percent;
     u8 on_off;
@@ -223,10 +235,11 @@ void led_strip_rgb_scene_start(void)
 
     /*
 		2. 用 app 层保存/恢复的动画参数填充场景
-		   （app_msg_anim_info_init() 已经给了默认值，这里直接取即可）
+		   （app_msg_anim_info_init() 已经给了默认值，这里直接读全局变量，
+		     不在栈上再开一份 app_msg_anim_info_t）
 	*/
-    app_msg_anim_info_get(&info);
-    led_strip_rgb_scene_set_from_app_info(&info);
+    led_strip_rgb_scene_set_from_app_info(
+        (app_msg_anim_info_t *)&app_msg_anim_info);
 
     // 3. 亮度/速度/开关以旧通道保存的值为准
     led_strip_rgb_scene_set_brightness(brightness_percent);

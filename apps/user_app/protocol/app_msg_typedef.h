@@ -24,6 +24,7 @@ enum
     APP_MSG_MOD_IDX_METEOR_SHOWER,       // 流星雨
     APP_MSG_MOD_IDX_OPENING_AND_CLOSING, // 开幕 or 闭幕
     APP_MSG_MOD_IDX_RUN,                 // 跑动
+    APP_MSG_MOD_IDX_RUN_COLLECTION,      // 跑动集合（0x0D，内置多个跑动子动画循环执行）
 };
 typedef u8 app_msg_mod_idx_t;
 

@@ -81,9 +81,17 @@ static u16 anim_frame_interval_ms(void)
 // 每段多少个灯（段大小）
 static u8 anim_leds_per_seg(void)
 {
-    u16 leds_per_seg = led_strip_rgb_scene_get_leds_per_seg();
+    u16 leds_per_seg =
+        led_strip_rgb_scene_get_leds_per_seg(); // 每段多少个灯（app 下发的 byte7）
 
-    if (leds_per_seg > _seg_len) {
+    /*
+        app 协议里 byte7 是「多少个灯为一组」：
+            byte7 = 0        -> 所有灯为同一组
+            byte7 > 灯带长度 -> 所有灯为同一组
+        这两种情况都换算成整条灯带（真实的段长度 _seg_len）；
+        其它情况只做「至少 1 个灯」的下限保护，上限就是灯带长度。
+    */
+    if ((0 == leds_per_seg) || (leds_per_seg > _seg_len)) {
         leds_per_seg = _seg_len;
     }
     if (leds_per_seg > 0xFF) {
@@ -95,6 +103,82 @@ static u8 anim_leds_per_seg(void)
     }
 
     return (u8)leds_per_seg;
+}
+
+/*
+    开合动画的节奏
+    ================================================================================
+    开合是「从一端走到另一端」的动画，节奏必须跟着灯带长度走，
+    否则 6 个灯时「一趟」只有几帧，速度开到最快就会变成整条灯带在闪烁：
+
+        - 一趟（walk：从一端走到另一端）的时长由速度百分比在
+          [ANIM_OPEN_CLOSE_WALK_SLOW_MS, ANIM_OPEN_CLOSE_WALK_FAST_MS] 之间插值；
+        - 帧间隔 = 一趟时长 / 一趟的帧数：
+              灯带短（本工程 6 灯）-> 每帧 1 个灯，帧间隔自然变大
+                                    （6 灯 + 最快 = 133ms/帧，一趟 800ms，不会闪）；
+              灯带很长             -> 帧数受 ANIM_OPEN_CLOSE_FRAME_MS_MIN(10ms) 限制，
+                                    这时每帧多走几个灯，一趟的时长仍然不变；
+        - 停留时长（全亮/全灭停一拍）= 一趟时长，跟着灯带长度自适应。
+
+    结论：**不管灯带多长，一趟的时长都只由速度决定**，
+    所以开到最快也只是 800ms 走完一趟，不会变成整条灯带闪烁。
+    ================================================================================
+*/
+#define ANIM_OPEN_CLOSE_WALK_SLOW_MS 2400 // 速度 0%：一趟走 2400ms
+#define ANIM_OPEN_CLOSE_WALK_FAST_MS 800  // 速度 100%：一趟走 800ms（再快就闪了）
+#define ANIM_OPEN_CLOSE_FRAME_MS_MIN 10   // 帧间隔下限（WS2812FX 一帧最快 10ms）
+
+/*
+    跑动一组多少个灯（点宽）
+    ================================================================================
+    「点 + 间隔」为一组，一组里亮的灯数 = 点宽，点与点之间隔同样多的底色灯：
+
+        byte7 = 0（app 没指定）-> 按灯带长度自动分组，灯带越长一组灯越多：
+                                  本工程 6 灯 = 2 个灯一组，图案 ● ● ○ ○ ● ●
+        byte7 非 0            -> 一组 = byte7 个灯
+
+    一组最少 1 个灯、最多 灯带长度 / 2（超了就整条灯带都是点，看不出间隔）。
+    ================================================================================
+*/
+#define ANIM_RUN_GROUP_DIV 3 // byte7 = 0 时：一组灯数 = 灯带长度 / 3（至少 1 个）
+
+static u16 anim_run_group_len(void)
+{
+    u16 group_len = led_strip_rgb_scene_get_leds_per_seg(); // app 下发的 byte7
+    u16 max_group_len = (u16)(_seg_len / 2); // 一组最多占灯带的一半
+
+    if (max_group_len < 1) {
+        max_group_len = 1;
+    }
+
+    if (0 == group_len) {
+        // app 没指定：按灯带长度分组（灯带越长，一组灯越多）
+        group_len = (u16)(_seg_len / ANIM_RUN_GROUP_DIV);
+    }
+    if (group_len < 1) {
+        group_len = 1; // 最小 1 个灯一组
+    }
+    if (group_len > max_group_len) {
+        group_len = max_group_len;
+    }
+
+    return group_len;
+}
+
+/*
+    跑动一个「点 + 间隔」单元的宽度
+    点与点之间隔同样多的底色灯，所以单元 = 点宽 * 2：
+        6 灯（本工程，2 个灯一组）-> 单元 4：图案 ● ● ○ ○ ● ●
+*/
+static u16 anim_run_unit_len(u16 dot_width)
+{
+    u16 unit = (u16)(dot_width * 2); // 点 + 同样多的底色
+
+    if (unit < 2) {
+        unit = 2; // 兜底：一个点 + 一个底色
+    }
+
+    return unit;
 }
 
 // 颜色数量（至少 1）
@@ -118,16 +202,18 @@ static u32 anim_background_color(void)
 // 随机取一个非黑的颜色下标（颜色池全是黑色时，就返回抽到的那个）
 static u8 anim_random_color_index(void)
 {
-    u8 color_count = anim_color_count();
-    u8 color_index = (u8)WS2812FX_random16_lim(color_count);
-    u8 offset;
+    u8 color_count = anim_color_count(); // 颜色数量（至少 1）
+    u8 color_index =
+        (u8)WS2812FX_random16_lim(color_count); // 随机抽到的颜色下标
+    u8 offset;                                  // 往后找非黑颜色时用的偏移
+    u8 probe_index;                             // 试探用的颜色下标
 
     if (0 != anim_pick_color(color_index)) {
         return color_index;
     }
 
     for (offset = 1; offset < color_count; offset++) {
-        u8 probe_index = (u8)((color_index + offset) % color_count);
+        probe_index = (u8)((color_index + offset) % color_count);
         if (0 != anim_pick_color(probe_index)) {
             return probe_index;
         }
@@ -137,24 +223,65 @@ static u8 anim_random_color_index(void)
 }
 
 /*
-	流星动画用的底色
-	================================================================================
-	流星是靠「亮度渐变」画出来的，底色和流星颜色一样时流星会看不见，所以先修一下：
-		- 底色 == 流星颜色，且流星颜色不是黑色 -> 底色用黑色；
-		- 底色 == 流星颜色，且流星颜色是黑色   -> 底色用白色；
-		- 两者不同 -> 直接用 app 下发的底色。
-	================================================================================
+    颜色的亮度（0 ~ 255，按人眼对 G 最敏感做的近似加权）
 */
-static u32 anim_meteor_background_color(u32 meteor_color)
+static u8 anim_color_level(u32 color)
 {
-    u32 background_color = anim_background_color();
+    u32 r = (color >> 16) & 0xFF; // 红
+    u32 g = (color >> 8) & 0xFF;  // 绿
+    u32 b = color & 0xFF;         // 蓝
 
-    if (background_color != meteor_color) {
-        return background_color;
+    return (u8)(((r * 3) + (g * 6) + b) / 10);
+}
+
+/*
+    流星拖尾的两个端点色（头 / 尾）
+    ================================================================================
+    流星是靠「亮度从头部往尾部递减」画出来的，拖尾必须和底色有明显反差，
+    否则亮底（青底 / 粉底）上整条灯带都发白，看不出流星在哪：
+
+        - 普通底色：头 = 流星色（流星色本身太暗就用白），尾 = 黑
+              —— 尾巴在亮底上是黑的，一眼就能看出流星；
+        - 底色本身很亮（接近白，例如白底）：反过来，头 = 黑、尾 = 白，
+              否则白流星在白底上根本看不见。
+
+    判据：底色亮度 >= ANIM_METEOR_BRIGHT_BG_LEVEL 就算「亮底」。
+    现场觉得流星不够明显时，只调下面两个宏即可。
+    ================================================================================
+*/
+#define ANIM_METEOR_BRIGHT_BG_LEVEL 224 // 底色亮度（0~255）超过它就算「亮底」
+#define ANIM_METEOR_DARK_HEAD_LEVEL 24  // 流星色比它还暗时，头部改用白色
+#define ANIM_METEOR_WHITE ((u32)0x00FFFFFF)
+#define ANIM_METEOR_BLACK ((u32)0x000000)
+
+typedef struct
+{
+    u32 head; // 流星头部（最亮处）的颜色
+    u32 tail; // 流星尾部（最暗处）的颜色
+} anim_meteor_trail_t;
+
+// 算出一颗流星的拖尾端点色（头 / 尾）
+static anim_meteor_trail_t anim_meteor_trail_colors(u32 meteor_color)
+{
+    u8 bg_level = anim_color_level(anim_background_color()); // 底色亮度
+    u8 meteor_level = anim_color_level(meteor_color);        // 流星色亮度
+    anim_meteor_trail_t trail;                               // 返回值
+
+    if (bg_level < ANIM_METEOR_BRIGHT_BG_LEVEL) {
+        // 普通底色：头 = 流星色（太暗就用白），尾 = 黑
+        trail.head = (meteor_level < ANIM_METEOR_DARK_HEAD_LEVEL)
+                         ? ANIM_METEOR_WHITE
+                         : meteor_color;
+        trail.tail = ANIM_METEOR_BLACK;
+    } else {
+        // 亮底（白底）：反过来说，头 = 黑、尾 = 白
+        trail.head = ANIM_METEOR_BLACK;
+        trail.tail = ANIM_METEOR_WHITE;
     }
 
-    return (0 == meteor_color) ? (u32)0xFFFFFF : (u32)0x000000;
+    return trail;
 }
+ 
 
 /*
 	逻辑位置 -> 实际灯珠下标
@@ -163,7 +290,7 @@ static u32 anim_meteor_background_color(u32 meteor_color)
 */
 static u16 anim_led_index_of(u16 led_pos)
 {
-    u16 led_count = _seg_len;
+    u16 led_count = _seg_len; // 当前段的灯珠数量
 
     /*
 		段长度异常（理论上不会发生）时直接返回段的起始灯珠：
@@ -183,6 +310,28 @@ static u16 anim_led_index_of(u16 led_pos)
     return (u16)(_seg->start + led_pos);
 }
 
+/*
+    逻辑位置 -> 实际灯珠下标（指定方向）
+    跑动集合里的子动画带自己的方向（可能和场景方向不同），所以单独给一个带方向的版本。
+*/
+static u16 anim_led_index_of_dir(u16 led_pos, u8 reverse)
+{
+    u16 led_count = _seg_len; // 当前段的灯珠数量
+
+    if (0 == led_count) {
+        return _seg->start;
+    }
+
+    if (led_pos >= led_count) {
+        led_pos = (u16)(led_count - 1);
+    }
+    if (reverse) {
+        led_pos = (u16)(led_count - 1 - led_pos);
+    }
+
+    return (u16)(_seg->start + led_pos);
+}
+
 // 整条灯带填充同一个颜色
 static void anim_fill_strip(u32 color)
 {
@@ -196,7 +345,8 @@ static void anim_fill_strip(u32 color)
 */
 static u32 anim_cycle_time_ms(u32 slow_ms, u32 fast_ms)
 {
-    u32 speed = led_strip_rgb_scene.speed;
+    u32 speed =
+        led_strip_rgb_scene.speed; // app 下发的动画速度百分比（0 ~ 100）
 
     // 无符号运算，slow_ms < fast_ms 时会下溢成一个很大的数，这里先兜底
     if (slow_ms <= fast_ms) {
@@ -216,8 +366,8 @@ static u32 anim_cycle_time_ms(u32 slow_ms, u32 fast_ms)
 */
 static u16 anim_step_per_frame(u16 total_steps, u32 cycle_time_ms)
 {
-    u32 frame_interval_ms = anim_frame_interval_ms();
-    u32 step_per_frame;
+    u32 frame_interval_ms = anim_frame_interval_ms(); // 当前帧间隔（ms）
+    u32 step_per_frame;                               // 每帧要走多少步
 
     if (0 == cycle_time_ms) {
         cycle_time_ms = 1;
@@ -242,7 +392,7 @@ static u16 anim_step_per_frame(u16 total_steps, u32 cycle_time_ms)
 */
 static u16 anim_step_of_round(u16 total_steps, u32 round_ms, u16 frame_ms)
 {
-    u32 step;
+    u32 step; // 每帧的步进
 
     if (0 == round_ms) {
         round_ms = 1;
@@ -269,7 +419,7 @@ static u16 anim_step_of_round(u16 total_steps, u32 round_ms, u16 frame_ms)
 static u8 anim_first_frame = 1;
 static u8 anim_take_first_frame(void)
 {
-    u8 first = anim_first_frame;
+    u8 first = anim_first_frame; // 本帧是不是切换模式后的第一帧（取完就清标志）
 
     anim_first_frame = 0;
     return first;
@@ -312,21 +462,52 @@ u16 led_strip_rgb_scene_anim_static(void)
 	- 帧间隔固定成 ANIM_FRAME_MS（小值），一轮时长由速度在
 	  [ANIM_GRADUAL_ROUND_SLOW_MS, ANIM_GRADUAL_ROUND_FAST_MS] 之间插值
 	  —— 速度快慢只影响渐变节奏，不会出现「一帧一帧跳变」。
+	- 颜色池只有一种颜色时凑不出「一对颜色」，另一种颜色按本色取一个反差的：
+	  本色不是黑色 -> 补黑色（「本色 <-> 黑」，像熄灭式呼吸）；
+	  本色是黑色 -> 补白色（「黑 <-> 白」，否则整条灯带一直是黑的看不见）。
 	================================================================================
 */
+
+/*
+	颜色池只有一种颜色时，渐变补上的「另一种颜色」（0x00RRGGBB，与场景颜色池写法一致）：
+		- 本色不是黑色 -> 补黑色：画面在「本色 <-> 黑」之间渐变（像熄灭式呼吸）；
+		- 本色是黑色   -> 补白色：画面在「黑 <-> 白」之间渐变（否则全黑看不见）。
+*/
+#define ANIM_GRADUAL_WHITE ((u32)0x00FFFFFF)
+#define ANIM_GRADUAL_BLACK ((u32)0x000000)
+
 u16 led_strip_rgb_scene_anim_gradual(void)
 {
-    u8 leds_per_seg = anim_leds_per_seg();
-    u8 color_count = anim_color_count();
-    u8 color_offset = (u8)_seg_rt->aux_param;    // 当前配色在颜色池中的偏移
+    /*
+		颜色池只有一种颜色时，凑不出「一对颜色」，另一种颜色按本色取一个反差的
+		（见 ANIM_GRADUAL_WHITE / ANIM_GRADUAL_BLACK）：本色不是黑色就补黑色，
+		本色是黑色就补白色，画面在两者之间来回渐变，看起来像呼吸。
+		other_first 是「方向标志」（0 = 本色在前，1 = 另一种颜色在前）：
+		这一轮的结束色就是下一轮的起始色，所以接起来依然无缝、不会跳色。
+	*/
+    u8 leds_per_seg = anim_leds_per_seg(); // 每段多少个灯
+    u8 color_count = anim_color_count();   // 颜色数量（至少 1）
+    u8 color_offset =
+        (u8)_seg_rt->aux_param; // 多色时：当前配色在颜色池里的偏移
+    u8 single_color =
+        (1 == color_count); // 1 = 颜色池只有一种颜色（需要补一对颜色）
+    u32 single_color_value = anim_pick_color(0); // 单色时颜色池里唯一那个颜色
+    u32 single_other_color =                     // 单色时补的「另一种颜色」：
+        (0 == single_color_value) ? ANIM_GRADUAL_WHITE : ANIM_GRADUAL_BLACK;
+    u8 other_first =
+        (u8)(_seg_rt->aux_param3 &
+             1); // 单色的方向标志：0 = 本色在前，1 = 另一种颜色在前
     u16 level = (u16)_seg_rt->counter_mode_step; // 渐变进度 0 ~ 255
-    u16 frame_ms = ANIM_FRAME_MS;
-    u16 step =
+    u16 frame_ms = ANIM_FRAME_MS;                // 帧间隔（ms）
+    u16 step =                                   // 每帧的渐变步进
         anim_step_of_round(256,
                            anim_cycle_time_ms(ANIM_GRADUAL_ROUND_SLOW_MS,
                                               ANIM_GRADUAL_ROUND_FAST_MS),
                            frame_ms);
-    u16 led_pos;
+    u16 led_pos;    // 逻辑灯位置（0 = 控制板接灯带那一端）
+    u8 seg_index;   // 该灯属于第几段（多色时按段取色）
+    u32 color_from; // 这一帧该灯渐变的起始颜色
+    u32 color_to;   // 这一帧该灯渐变的结束颜色
 
     // 兜底：运行状态被外部改动过时先夹回合法范围
     if (level > 255) {
@@ -334,21 +515,32 @@ u16 led_strip_rgb_scene_anim_gradual(void)
     }
 
     for (led_pos = 0; led_pos < _seg_len; led_pos++) {
-        u8 seg_index = (u8)(led_pos / leds_per_seg);
+        if (single_color) {
+            // 单色：一对颜色 = {本色, 另一种颜色}，两轮之间起点/终点互换
+            color_from = other_first ? single_other_color : single_color_value;
+            color_to = other_first ? single_color_value : single_other_color;
+        } else {
+            seg_index = (u8)(led_pos / leds_per_seg);
+
+            color_from = anim_pick_color((u8)(seg_index + color_offset));
+            color_to = anim_pick_color((u8)(seg_index + color_offset + 1));
+        }
 
         WS2812FX_setPixelColor(
             anim_led_index_of(led_pos),
-            WS2812FX_color_blend(
-                anim_pick_color((u8)(seg_index + color_offset)),
-                anim_pick_color((u8)(seg_index + color_offset + 1)),
-                (u8)level));
+            WS2812FX_color_blend(color_from, color_to, (u8)level));
     }
 
     level = (u16)(level + step);
     if (level >= 255) {
         // 渐变到 100%：换到下一组颜色（此时画面无缝衔接）
         level = 0;
-        _seg_rt->aux_param = (u8)((color_offset + 1) % color_count);
+        if (single_color) {
+            // 单色：这一轮走到「另一种颜色」了，下一轮从它渐回本色，接起来不跳色
+            _seg_rt->aux_param3 = (u16)((_seg_rt->aux_param3 + 1) & 1);
+        } else {
+            _seg_rt->aux_param = (u8)((color_offset + 1) % color_count);
+        }
         SET_CYCLE;
     }
     _seg_rt->counter_mode_step = level;
@@ -366,12 +558,13 @@ u16 led_strip_rgb_scene_anim_gradual(void)
 */
 u16 led_strip_rgb_scene_anim_jump(void)
 {
-    u8 leds_per_seg = anim_leds_per_seg();
-    u8 color_offset = (u8)_seg_rt->aux_param;
-    u16 led_pos;
+    u8 leds_per_seg = anim_leds_per_seg();    // 每段多少个灯
+    u8 color_offset = (u8)_seg_rt->aux_param; // 当前配色在颜色池里的偏移
+    u16 led_pos;  // 逻辑灯位置（0 = 控制板接灯带那一端）
+    u8 seg_index; // 该灯属于第几段
 
     for (led_pos = 0; led_pos < _seg_len; led_pos++) {
-        u8 seg_index = (u8)(led_pos / leds_per_seg); // 第几段
+        seg_index = (u8)(led_pos / leds_per_seg); // 第几段
 
         /*
 			取色下标会对颜色数量取模，所以段序号超过颜色数量时，
@@ -401,12 +594,16 @@ u16 led_strip_rgb_scene_anim_jump(void)
 */
 u16 led_strip_rgb_scene_anim_breath(void)
 {
-    u8 leds_per_seg = anim_leds_per_seg();            // 每段多少个灯
-    u16 breath_pos = (u16)_seg_rt->counter_mode_step; // 0 ~ 511
-    u16 step_per_frame =
+    u8 leds_per_seg = anim_leds_per_seg(); // 每段多少个灯
+    u16 breath_pos =
+        (u16)_seg_rt
+            ->counter_mode_step; // 呼吸位置 0 ~ 511（0~255 变亮，255~511 变暗）
+    u16 step_per_frame =         // 每帧的呼吸步进（一个周期共 512 步）
         anim_step_per_frame(512, anim_cycle_time_ms(6000, 1000));
-    u8 breath_level;
-    u16 led_pos;
+    u8 breath_level; // 这一帧的亮度等级 0 ~ 255
+    u16 led_pos;     // 逻辑灯位置（0 = 控制板接灯带那一端）
+    u8 seg_index;    // 该灯属于第几段
+    u32 color;       // 该灯这一帧的颜色（底色 -> 该段的颜色）
 
     // 兜底：运行状态被外部改动过时，先夹回合法范围，避免 511 - breath_pos 下溢
     if (breath_pos > 511) {
@@ -421,8 +618,7 @@ u16 led_strip_rgb_scene_anim_breath(void)
     }
 
     for (led_pos = 0; led_pos < _seg_len; led_pos++) {
-        u8 seg_index = (u8)(led_pos / leds_per_seg); // 该灯属于第几段
-        u32 color;
+        seg_index = (u8)(led_pos / leds_per_seg); // 该灯属于第几段
 
         /*
 			每段取颜色池里对应的颜色（按位置固定，不随周期变化），从底色渐变到该颜色。
@@ -461,23 +657,26 @@ u16 led_strip_rgb_scene_anim_breath(void)
 */
 u16 led_strip_rgb_scene_anim_running_water(void)
 {
-    u8 color_count = anim_color_count();
-    u16 led_count = (_seg_len > 0) ? (u16)_seg_len : 1; // 按灯串长度均分
-    u16 cycle_units =
-        (u16)((u16)color_count * ANIM_COLOR_UNIT); // 颜色循环的总相位
-    u16 frame_ms = ANIM_FRAME_MS;
-    u16 step = anim_step_of_round(
-        cycle_units,
-        anim_cycle_time_ms(ANIM_WATER_ROUND_SLOW_MS, ANIM_WATER_ROUND_FAST_MS),
-        frame_ms);
-    u16 flow =
-        (u16)(_seg_rt->counter_mode_step % cycle_units); // 当前流到哪个相位
-    u16 led_pos;
+    u8 color_count = anim_color_count(); // 颜色数量（至少 1）
+    u16 led_count =
+        (_seg_len > 0) ? (u16)_seg_len : 1; // 灯带长度（按它均分一个颜色循环）
+    u16 cycle_units =                       // 一个完整颜色循环的总相位
+        (u16)((u16)color_count * ANIM_COLOR_UNIT);
+    u16 frame_ms = ANIM_FRAME_MS; // 帧间隔（ms）
+    u16 step =                    // 每帧流过的相位
+        anim_step_of_round(cycle_units,
+                           anim_cycle_time_ms(ANIM_WATER_ROUND_SLOW_MS,
+                                              ANIM_WATER_ROUND_FAST_MS),
+                           frame_ms);
+    u16 flow = // 当前流到哪个相位（0 ~ cycle_units-1）
+        (u16)(_seg_rt->counter_mode_step % cycle_units);
+    u16 led_pos;    // 逻辑灯位置（0 = 控制板接灯带那一端）
+    u32 phase;      // 该灯在颜色循环里的相位
+    u8 color_index; // 相位落在第几个颜色上
+    u8 level;       // 相邻两色之间的混色比例 0 ~ 255
 
     for (led_pos = 0; led_pos < _seg_len; led_pos++) {
-        u32 phase = ((u32)led_pos * cycle_units) / led_count;
-        u8 color_index;
-        u8 level;
+        phase = ((u32)led_pos * cycle_units) / led_count;
 
         /*
 			相位随 flow 递减，颜色循环才会朝着灯带末端流动；
@@ -504,13 +703,76 @@ u16 led_strip_rgb_scene_anim_running_water(void)
     return frame_ms;
 }
 
+/*
+    堆积一次点亮多少个灯（一组多少个灯）
+    ================================================================================
+    直接用 app 下发的 byte7（原始值），但堆积的语义和别的不一样：
+        byte7 = 0        -> 1 个灯一组：逐个灯堆积
+                            （如果按「所有灯为同一组」处理，就是整条灯带一起亮、
+                              一起灭，看起来只是整条灯带在闪）
+        byte7 > 灯带长度 -> 整条灯带一组（协议里的「所有灯为同一组」）
+        其它             -> 取原值（≥ 1）
+    ================================================================================
+*/
+static u16 anim_accumulation_group_len(void)
+{
+    u16 group_len =
+        led_strip_rgb_scene_get_leds_per_seg(); // app 下发的 byte7（原始值）
+
+    if (0 == group_len) {
+        return 1; // byte7 = 0：一个灯一组（逐灯堆积）
+    }
+    if (group_len > _seg_len) {
+        group_len = _seg_len; // 超过灯带长度：整条灯带一组
+    }
+    if (0 == group_len) {
+        group_len = 1; // 灯带长度为 0 时的兜底
+    }
+
+    return group_len;
+}
+
+/*
+    堆积的节奏
+    ================================================================================
+    堆积是「一组一组点亮」，节奏不能直接跟 app 的帧间隔走（最快 10ms 一帧），
+    否则 6 个灯上 60ms 就铺满，看起来就是「一下就亮完了」：
+
+        - 「点亮整条灯带」的时长由速度百分比在
+          [ANIM_ACCUM_ROUND_SLOW_MS, ANIM_ACCUM_ROUND_FAST_MS] 之间插值；
+        - steps    = ceil(灯带长度 / 一组灯数)（一共要点几步）
+        - frame_ms = round_ms / steps（≥ ANIM_ACCUM_FRAME_MS_MIN）（每帧点一组）
+        - 点满后停留 steps 帧（= 一个 round_ms），再换下一种颜色重新堆积
+
+    灯带再长，也只是 steps 变多、frame_ms 变小（下限 10ms），
+    点亮整条灯带的时长始终保持 900ms(最快) ~ 3000ms(最慢)。
+    ================================================================================
+*/
+#define ANIM_ACCUM_ROUND_SLOW_MS 3000 // 速度 0%：点亮整条灯带用 3000ms
+#define ANIM_ACCUM_ROUND_FAST_MS 900  // 速度 100%：点亮整条灯带用 900ms
+#define ANIM_ACCUM_FRAME_MS_MIN  10   // 帧间隔下限（WS2812FX 一帧最快 10ms）
+
 // 堆积：灯珠逐个点亮
 u16 led_strip_rgb_scene_anim_accumulation(void)
 {
-    u8 leds_per_seg = anim_leds_per_seg();
-    u8 color_index = (u8)_seg_rt->aux_param;
+    u16 group_len =
+        anim_accumulation_group_len(); // 一次点亮一组，一组多少个灯
+    u32 round_ms = // 点亮整条灯带的目标时长
+        anim_cycle_time_ms(ANIM_ACCUM_ROUND_SLOW_MS, ANIM_ACCUM_ROUND_FAST_MS);
+    u16 steps = // 一共要点几步（一步 = 一组）
+        (u16)((_seg_len + group_len - 1) / group_len);
+    u16 frame_ms;                            // 每帧点一组，帧间隔由它换算
+    u8 color_index = (u8)_seg_rt->aux_param; // 当前堆积用的颜色下标
     u16 lit_leds = (u16)_seg_rt->counter_mode_step; // 已经点亮的灯数
-    u16 led_pos;
+    u16 led_pos; // 逻辑灯位置（0 = 控制板接灯带那一端）
+
+    if (steps < 1) {
+        steps = 1;
+    }
+    frame_ms = (u16)(round_ms / steps);
+    if (frame_ms < ANIM_ACCUM_FRAME_MS_MIN) {
+        frame_ms = ANIM_ACCUM_FRAME_MS_MIN;
+    }
 
     for (led_pos = 0; led_pos < _seg_len; led_pos++) {
         if (led_pos < lit_leds) {
@@ -523,32 +785,32 @@ u16 led_strip_rgb_scene_anim_accumulation(void)
     }
 
     if (lit_leds >= _seg_len) {
-        // 全部点亮后停留一会，再换一种颜色重新堆积
-        // （aux_param3 在这里用作「停留帧数」的计数器）
-        if (++_seg_rt->aux_param3 >= 30) {
+        // 全部点亮后停留一拍（steps 帧 = 一个 round_ms），
+        // 再换下一种颜色重新堆积（aux_param3 在这里用作「停留帧数」的计数器）
+        if (++_seg_rt->aux_param3 >= steps) {
             _seg_rt->aux_param3 = 0;
             _seg_rt->counter_mode_step = 0;
             _seg_rt->aux_param = (u8)((color_index + 1) % anim_color_count());
             SET_CYCLE;
         }
-    } else if (++_seg_rt->aux_param3 >= leds_per_seg) {
-        // 每 leds_per_seg 帧点亮一组（aux_param3 在这里用作「等待帧数」的计数器）
+    } else {
+        // 每帧点亮一组（一组 = group_len 个灯）
         _seg_rt->aux_param3 = 0;
-        lit_leds = (u16)(lit_leds + leds_per_seg);
+        lit_leds = (u16)(lit_leds + group_len);
         if (lit_leds > _seg_len) {
             lit_leds = _seg_len;
         }
         _seg_rt->counter_mode_step = lit_leds;
     }
 
-    return anim_frame_interval_ms();
+    return frame_ms;
 }
 
 // 星空：底色上单灯随机闪
 u16 led_strip_rgb_scene_anim_starry_sky(void)
 {
-    u16 led_pos = (u16)_seg_rt->aux_param3;  // 随机点的位置
-    u8 color_index = (u8)_seg_rt->aux_param; // 随机点的颜色
+    u16 led_pos = (u16)_seg_rt->aux_param3;  // 随机亮点所在的位置（逻辑位置）
+    u8 color_index = (u8)_seg_rt->aux_param; // 随机亮点用的颜色下标
 
     // 刚进入星空：上一轮动画的画面还留在灯带上（余晖是慢慢淡的），先清干净
     if (anim_take_first_frame()) {
@@ -587,10 +849,10 @@ u16 led_strip_rgb_scene_anim_starry_sky(void)
 	- 每帧都先把整条灯带重新铺回底色，不会像渐灭类动画那样在中间积出一块固定颜色。
 	================================================================================
 */
-#define ANIM_NEBULA_MAX 8
+#define ANIM_NEBULA_MAX          8
 #define ANIM_NEBULA_ENVELOPE_MAX 510 // 包络 0 -> 255 -> 0，共 510 步
-#define ANIM_NEBULA_STEP_MIN 12      // 每帧包络步进（越小闪得越慢）
-#define ANIM_NEBULA_STEP_RANGE 24    // 步进的随机范围
+#define ANIM_NEBULA_STEP_MIN     12  // 每帧包络步进（越小闪得越慢）
+#define ANIM_NEBULA_STEP_RANGE   24  // 步进的随机范围
 
 static u16 anim_nebula_envelope[ANIM_NEBULA_MAX]; // 亮度包络 0 ~ 510
 static u16 anim_nebula_pos[ANIM_NEBULA_MAX];      // 星空团的起始灯珠
@@ -613,10 +875,21 @@ static void anim_nebula_spawn(u8 cluster_index, u16 block_len)
 
 u16 led_strip_rgb_scene_anim_nebula(void)
 {
-    u16 block_len = anim_leds_per_seg(); // 星空团大小 = 多少个灯为一组
-    u32 background_color = anim_background_color();
-    u8 cluster_count; // 同时闪烁的星空团数量
-    u8 cluster_index;
+    u16 block_len = anim_leds_per_seg(); // 星空团大小（多少个灯为一组）
+    u32 background_color = anim_background_color(); // app 下发的底色
+    u8 cluster_count;                               // 同时闪烁的星空团数量
+    u8 cluster_index;                               // 当前正在处理第几个星空团
+    u16 envelope;     // 该团的亮度包络 0 ~ 510（0~255 亮起，255~510 灭下）
+    u16 level;        // 由包络换算出的亮度等级 0 ~ 255
+    u8 color_index;   // 该团用的颜色下标
+    u16 cluster_pos;  // 该团的起始灯珠位置
+    u16 offset;       // 团内第几个灯（0 = 团头）
+    u16 led_pos;      // 该灯的逻辑位置
+    u16 twice_offset; // offset * 2（算离团中心多远用）
+    u16 center;       // 团中心对应的 2 倍偏移
+    u16 distance;     // 该灯离团中心的距离（2 倍偏移）
+    u16 weight;       // 该灯的亮度权重（中间最亮、两侧递减）
+    u8 led_level;     // 该灯最终的亮度等级
 
     if (0 == _seg_len) {
         return anim_frame_interval_ms();
@@ -643,7 +916,8 @@ u16 led_strip_rgb_scene_anim_nebula(void)
     if ((0 == anim_nebula_inited) || (anim_nebula_count != cluster_count)) {
         anim_nebula_inited = 1;
         anim_nebula_count = cluster_count;
-        for (cluster_index = 0; cluster_index < cluster_count; cluster_index++) {
+        for (cluster_index = 0; cluster_index < cluster_count;
+             cluster_index++) {
             anim_nebula_spawn(cluster_index, block_len);
             // 起始包络错开，几个团不会一起亮、一起灭
             anim_nebula_envelope[cluster_index] =
@@ -655,28 +929,25 @@ u16 led_strip_rgb_scene_anim_nebula(void)
     anim_fill_strip(background_color);
 
     for (cluster_index = 0; cluster_index < cluster_count; cluster_index++) {
-        u16 envelope = anim_nebula_envelope[cluster_index];
-        u16 level =
-            (envelope > 255) ? (u16)(ANIM_NEBULA_ENVELOPE_MAX - envelope)
-                             : envelope;
-        u8 color_index = anim_nebula_color[cluster_index];
-        u16 cluster_pos = anim_nebula_pos[cluster_index];
-        u16 offset;
+        envelope = anim_nebula_envelope[cluster_index];
+        level = (envelope > 255) ? (u16)(ANIM_NEBULA_ENVELOPE_MAX - envelope)
+                                 : envelope;
+        color_index = anim_nebula_color[cluster_index];
+        cluster_pos = anim_nebula_pos[cluster_index];
 
         if (0 == level) {
             continue; // 这个团正好灭着
         }
 
         for (offset = 0; offset < block_len; offset++) {
-            u16 led_pos = (u16)(cluster_pos + offset);
-            u16 twice_offset = (u16)(offset * 2);
-            u16 center = (u16)(block_len - 1);
-            u16 distance = (twice_offset > center)
-                               ? (u16)(twice_offset - center)
-                               : (u16)(center - twice_offset);
+            led_pos = (u16)(cluster_pos + offset);
+            twice_offset = (u16)(offset * 2);
+            center = (u16)(block_len - 1);
+            distance = (twice_offset > center) ? (u16)(twice_offset - center)
+                                               : (u16)(center - twice_offset);
             // 中间最亮、两侧递减，看起来才像一团云
-            u16 weight = (u16)(255 - ((u32)distance * 255) / block_len);
-            u8 led_level = (u8)((u32)level * weight / 255);
+            weight = (u16)(255 - ((u32)distance * 255) / block_len);
+            led_level = (u8)((u32)level * weight / 255);
 
             if ((led_pos >= _seg_len) || (0 == led_level)) {
                 continue; // 团一部分在灯带外，或者这一刻刚亮/刚灭
@@ -724,18 +995,22 @@ static u8 anim_meteor_rate_index; // 流星当前写到亮度表的第几档
 	  （100% -> 70% -> 45% -> …… -> 2%）；
 	- 亮度表的 12 档走完之后，头部写的就是底色了，流星尾部会顺着灯带排出去、
 	  灯带回到全底色（旧动画也是这样收尾的），不会出现「只跑一轮、整条灯带一直亮着」；
+	- 拖尾两端色见 anim_meteor_trail_colors()：普通底色是「流星色 -> 黑」，
+	  亮底（白底）反过来是「黑 -> 白」，所以青底 / 粉底 / 白底上都能看清流星；
 	- 一帧一步，跑完 灯带长度 - 1 + 12*2 帧算一轮，配色前进一位（多色流星）。
 	================================================================================
 */
 u16 led_strip_rgb_scene_anim_meteor(void)
 {
-    u8 color_index = (u8)_seg_rt->aux_param;
-    u32 meteor_color = anim_pick_color(color_index);
-    u32 background_color = anim_meteor_background_color(meteor_color);
-    u16 frame_count = (u16)_seg_rt->counter_mode_step;
-    u16 cycle_len =
+    u8 color_index = (u8)_seg_rt->aux_param;         // 当前流星用的颜色下标
+    u32 meteor_color = anim_pick_color(color_index); // 流星颜色
+    anim_meteor_trail_t trail =
+        anim_meteor_trail_colors(meteor_color);     // 拖尾两端色（和底色反差）
+    u32 background_color = anim_background_color(); // app 下发的底色
+    u16 frame_count = (u16)_seg_rt->counter_mode_step; // 这一轮已经跑了多少帧
+    u16 cycle_len = // 一轮的总帧数（跑道 + 尾部排出去）
         (u16)(((_seg_len > 0) ? (_seg_len - 1) : 0) + ANIM_METEOR_RATE_MAX * 2);
-    u32 color;
+    u32 color; // 这一帧要写到流星头部的颜色
 
     // 刚进入流星：先把上一轮动画残留的画面清掉，并铺上底色
     if (anim_take_first_frame()) {
@@ -747,9 +1022,9 @@ u16 led_strip_rgb_scene_anim_meteor(void)
     anim_shift_by_one_led();
 
     if (anim_meteor_rate_index < ANIM_METEOR_RATE_MAX) {
-        // 亮度表还没走完：头部写「底色 -> 流星颜色」的混色
+        // 亮度表还没走完：头部写「拖尾末端色 -> 流星头部色」的混色
         color = WS2812FX_color_blend(
-            background_color, meteor_color,
+            trail.tail, trail.head,
             (u8)((u16)anim_meteor_rate[anim_meteor_rate_index] * 255 / 100));
         anim_meteor_rate_index++;
     } else {
@@ -790,12 +1065,14 @@ static const u8 anim_meteor_shower_rate[ANIM_METEOR_SHOWER_RATE_MAX] = {
 	帧间隔取流星动画的 1/ANIM_METEOR_SHOWER_FRAME_DIV；
 	最快 10ms（见 WS2812FX_service 里的 SPEED_MIN）。
 */
-#define ANIM_METEOR_SHOWER_FRAME_DIV 3
+#define ANIM_METEOR_SHOWER_FRAME_DIV    3
 #define ANIM_METEOR_SHOWER_FRAME_MS_MIN 10
 
 static u16 anim_meteor_shower_frame_ms(void)
 {
-    u16 frame_ms = anim_frame_interval_ms() / ANIM_METEOR_SHOWER_FRAME_DIV;
+    u16 frame_ms =
+        anim_frame_interval_ms() /
+        ANIM_METEOR_SHOWER_FRAME_DIV; // 流星雨的帧间隔（流星动画的 1/3）
 
     if (frame_ms < ANIM_METEOR_SHOWER_FRAME_MS_MIN) {
         frame_ms = ANIM_METEOR_SHOWER_FRAME_MS_MIN;
@@ -806,9 +1083,11 @@ static u16 anim_meteor_shower_frame_ms(void)
 
 /* 流星雨：多颗流星（每颗一种颜色；最多支持到协议的颜色上限） */
 #define ANIM_METEOR_MAX APP_MSG_COLOR_NUM_MAX
-static u16 anim_meteor_head_pos[ANIM_METEOR_MAX]; // 每颗流星头部的位置（可超出灯带）
-static u8 anim_meteor_count;      // 当前同时在跑的流星颗数
-static u8 anim_meteor_color_index; // 一次只跑一颗时，当前跑的是颜色池里的第几个颜色
+static u16
+    anim_meteor_head_pos[ANIM_METEOR_MAX]; // 每颗流星头部的位置（可超出灯带）
+static u8 anim_meteor_count;               // 当前同时在跑的流星颗数
+static u8
+    anim_meteor_color_index; // 一次只跑一颗时，当前跑的是颜色池里的第几个颜色
 static u8 anim_meteor_inited;
 
 /*
@@ -824,7 +1103,8 @@ static u8 anim_meteor_inited;
 	  所以 7 段、8 段不同颜色都能跑出来，而且速度不会因为颜色变多而变快；
 	- 所有流星速度一致、初始位置在跑道上等分，几段始终错开；
 	- 帧间隔比流星动画短（见 anim_meteor_shower_frame_ms），所以流星出现得更频繁；
-	- 底色和流星颜色一样时，底色会自动换成反差大的（见 anim_meteor_background_color）。
+	- 拖尾两端色也走 anim_meteor_trail_colors()（普通底「流星色 -> 黑」、亮底「黑 -> 白」），
+	  每颗流星按**自己的颜色**算，几颗颜色不同也都有明显拖尾。
 	================================================================================
 */
 u16 led_strip_rgb_scene_anim_meteor_shower(void)
@@ -834,8 +1114,15 @@ u16 led_strip_rgb_scene_anim_meteor_shower(void)
     u8 sequential;                       // 1 = 一次只跑一颗，颜色轮着来
     u16 tail_len;                        // 流星长度（拖尾长度）
     u16 track_len;                       // 跑道长度 = 灯带长度 + 流星长度
-    u32 background_color;
-    u8 meteor_index;
+    u32 background_color;                // app 下发的底色（铺在流星之外）
+    u8 meteor_index;                     // 当前处理第几颗流星
+    u16 head_pos;                        // 这颗流星头部的位置（可超出灯带）
+    u8 color_index;                      // 这颗流星用的颜色下标
+    u32 meteor_color;                    // 这颗流星的颜色
+    anim_meteor_trail_t trail;           // 这颗流星拖尾的两端色
+    u16 tail_offset;                     // 拖尾上第几个灯（0 = 头部）
+    u16 led_pos;                         // 该灯的逻辑位置
+    u8 tail_rate;                        // 该灯对应的拖尾亮度百分比
 
     if (0 == _seg_len) {
         return anim_meteor_shower_frame_ms();
@@ -876,8 +1163,7 @@ u16 led_strip_rgb_scene_anim_meteor_shower(void)
         track_len = (u16)meteor_count;
     }
 
-    // 底色和流星颜色一样时流星会看不见（见 anim_meteor_background_color）
-    background_color = anim_meteor_background_color(anim_pick_color(0));
+    background_color = anim_background_color(); // app 下发的底色（铺在流星之外）
 
     // 初始位置在跑道上等分，几颗流星始终错开
     if ((0 == anim_meteor_inited) || (anim_meteor_count != meteor_count)) {
@@ -892,15 +1178,14 @@ u16 led_strip_rgb_scene_anim_meteor_shower(void)
     anim_fill_strip(background_color);
 
     for (meteor_index = 0; meteor_index < meteor_count; meteor_index++) {
-        u16 head_pos = anim_meteor_head_pos[meteor_index];
+        head_pos = anim_meteor_head_pos[meteor_index];
         // 几颗一起跑时每颗一种颜色；一次只跑一颗时，跑的是「当前颜色」
-        u8 color_index = sequential ? anim_meteor_color_index : meteor_index;
-        u16 tail_offset;
+        color_index = sequential ? anim_meteor_color_index : meteor_index;
+        meteor_color = anim_pick_color(color_index);
+        // 拖尾两端色按这颗流星自己的颜色算（见 anim_meteor_trail_colors）
+        trail = anim_meteor_trail_colors(meteor_color);
 
         for (tail_offset = 0; tail_offset < tail_len; tail_offset++) {
-            u16 led_pos;
-            u8 tail_rate;
-
             if (tail_offset > head_pos) {
                 break; // 拖尾还没全部进入灯带
             }
@@ -916,8 +1201,7 @@ u16 led_strip_rgb_scene_anim_meteor_shower(void)
             }
             WS2812FX_setPixelColor(
                 anim_led_index_of(led_pos),
-                WS2812FX_color_blend(background_color,
-                                     anim_pick_color(color_index),
+                WS2812FX_color_blend(trail.tail, trail.head,
                                      (u8)((u16)tail_rate * 255 / 100)));
         }
     }
@@ -944,90 +1228,435 @@ u16 led_strip_rgb_scene_anim_meteor_shower(void)
     return anim_meteor_shower_frame_ms();
 }
 
-// 开合：dir = 0 开幕，dir = 1 闭幕
+/*
+    开合：dir = 0 开幕，dir = 1 闭幕
+    ================================================================================
+    协议只有 dir 能区分开/闭，就按下面的效果来做：
+
+        开幕（dir = 0）：从一端「流水」到另一端（逐个点亮），整条点亮后停一拍，
+                         然后整条熄灭，换下一种颜色，再从同一端重新点亮，循环；
+        闭幕（dir = 1）：整条点亮后从尾部（远离控制板那一端）往回逐渐熄灭，
+                         全灭停一拍，换下一种颜色后重新整条点亮，循环。
+
+    - 方向位(dir)在本模式下只用来区分开幕/闭幕，所以亮区按逻辑位置画
+      （用 anim_led_index_of_dir(pos, 0)，不跟方向翻转）：
+          开幕：亮区 = [0, progress)，从逻辑 0 端往另一端生长；
+          闭幕：亮区 = [0, _seg_len - progress)，熄灭端在尾部。
+    - 节奏见上面「开合动画的节奏」：一趟的时长只跟速度有关，
+      帧间隔和每帧推进的灯数都由「一趟时长 / 灯带长度」换算，灯带长短都不会闪；
+    - 停留时长 = 一趟时长（跟着灯带长度自适应）；
+    - **不用 app 下发的「多少个灯为一组」**：亮区整条同色，跑完一轮换下一种颜色。
+    ================================================================================
+*/
 u16 led_strip_rgb_scene_anim_open_close(void)
 {
-    u8 leds_per_seg = anim_leds_per_seg();
-    u8 color_offset = (u8)_seg_rt->aux_param;
-    u16 lit_len = (u16)_seg_rt->counter_mode_step; // 当前亮起来的长度
-    u16 lit_start;
-    u16 led_pos;
+    u8 color_count = anim_color_count();     // 颜色数量（至少 1）
+    u8 color_index = (u8)_seg_rt->aux_param; // 这一轮用的颜色下标
+    u32 walk_ms =                            // 一趟（一端走到另一端）的目标时长
+        anim_cycle_time_ms(ANIM_OPEN_CLOSE_WALK_SLOW_MS,
+                           ANIM_OPEN_CLOSE_WALK_FAST_MS);
+    u32 frames_max = // 一趟最多多少帧（再快就超过帧间隔下限了）
+        walk_ms / ANIM_OPEN_CLOSE_FRAME_MS_MIN;
+    u16 step;     // 每帧推进多少个灯（灯带很长时一帧多走几个）
+    u16 frames;   // 一趟的帧数（= 全亮/全灭的停留帧数）
+    u16 frame_ms; // 帧间隔（ms）= 一趟时长 / 一趟帧数
+    u16 progress =
+        (u16)_seg_rt->counter_mode_step; // 已经推进的灯数（0 ~ _seg_len）
+    u16 lit_len;                         // 亮区长度（多少个灯亮着）
+    u16 led_pos;                         // 逻辑灯位置（0 = 控制板接灯带那一端）
+    u32 color = anim_pick_color(color_index); // 这一轮的颜色（整条同色）
 
-    if (lit_len > _seg_len) {
-        lit_len = _seg_len;
+    if (0 == frames_max) {
+        frames_max = 1;
     }
-    lit_start = (u16)((_seg_len - lit_len) / 2); // 亮区始终居中
+    /*
+        每帧推进几个灯：灯带短就是 1 个灯，灯带很长才多走几个（一趟最多 frames_max 帧），
+        这样「一趟的时长」不会被灯带长度拖长，也不会因为帧数太少而变成闪烁。
+    */
+    step = (u16)((_seg_len + frames_max - 1) / frames_max);
+    if (step < 1) {
+        step = 1;
+    }
+    frames = (u16)((_seg_len + step - 1) / step);
+    if (frames < 1) {
+        frames = 1;
+    }
+    frame_ms = (u16)(walk_ms / frames);
+    if (frame_ms < ANIM_OPEN_CLOSE_FRAME_MS_MIN) {
+        frame_ms = ANIM_OPEN_CLOSE_FRAME_MS_MIN;
+    }
+
+    // 兜底：运行状态被外部改动过时先夹回合法范围
+    if (progress > _seg_len) {
+        progress = 0;
+    }
+
+    // 开幕：亮区从逻辑 0 端生长；闭幕：从尾部灭过来（已灭掉 progress 个灯）
+    lit_len = led_strip_rgb_scene_is_reverse() ? (u16)(_seg_len - progress)
+                                               : progress;
 
     anim_fill_strip(anim_background_color());
 
-    for (led_pos = lit_start; led_pos < (u16)(lit_start + lit_len); led_pos++) {
-        // 亮区按段取色，多色开幕/闭幕也能有颜色变化
-        u8 color_index =
-            (u8)((color_offset + (led_pos - lit_start) / leds_per_seg) %
-                 anim_color_count());
-        WS2812FX_setPixelColor(anim_led_index_of(led_pos),
-                               anim_pick_color(color_index));
+    for (led_pos = 0; led_pos < lit_len; led_pos++) {
+        // 固定按逻辑位置画（dir 已用于区分开/闭，这里不再跟方向翻转）
+        WS2812FX_setPixelColor(anim_led_index_of_dir(led_pos, 0), color);
     }
 
-    if (led_strip_rgb_scene_is_reverse()) {
-        // 闭幕：亮区由两端向中间收合（全亮 -> 全灭）
-        lit_len = (lit_len >= leds_per_seg) ? (u16)(lit_len - leds_per_seg) : 0;
-        if ((0 == lit_len) && (++_seg_rt->aux_param3 > 30)) {
-            _seg_rt->aux_param3 = 0;
-            lit_len = _seg_len;
-            _seg_rt->aux_param = (u8)((color_offset + 1) % anim_color_count());
-            SET_CYCLE;
+    /*
+        推进：一趟走完（亮区满 / 亮区灭光）后停 frames 帧（= 一趟的时长），
+        然后换下一种颜色、从头开始下一轮：
+            开幕 -> progress 归 0 就是「整条熄灭」那一帧，下一帧重新点亮；
+            闭幕 -> progress 归 0 就是「整条点亮」，下一帧重新从尾部熄灭。
+    */
+    if (progress < _seg_len) {
+        progress = (u16)(progress + step);
+        if (progress > _seg_len) {
+            progress = _seg_len;
         }
-    } else {
-        // 开幕：亮区由中间向两端展开（全灭 -> 全亮）
-        if (lit_len < _seg_len) {
-            lit_len = (u16)(lit_len + leds_per_seg);
-            if (lit_len > _seg_len) {
-                lit_len = _seg_len;
-            }
-        } else if (++_seg_rt->aux_param3 > 30) {
-            _seg_rt->aux_param3 = 0;
-            lit_len = 0;
-            _seg_rt->aux_param = (u8)((color_offset + 1) % anim_color_count());
-            SET_CYCLE;
-        }
-    }
-
-    _seg_rt->counter_mode_step = lit_len;
-
-    return anim_frame_interval_ms();
-}
-
-// 跑动：一个「段」在底色上跑动
-u16 led_strip_rgb_scene_anim_run(void)
-{
-    u8 leds_per_seg = anim_leds_per_seg();
-    u16 head_pos = (u16)_seg_rt->counter_mode_step;
-    u16 tail_offset;
-
-    anim_fill_strip(anim_background_color());
-
-    for (tail_offset = 0; tail_offset < leds_per_seg; tail_offset++) {
-        u16 led_pos;
-
-        if (tail_offset > head_pos) {
-            break;
-        }
-        led_pos = (u16)(head_pos - tail_offset);
-        if (led_pos < _seg_len) {
-            WS2812FX_setPixelColor(anim_led_index_of(led_pos),
-                                   anim_pick_color(0));
-        }
-    }
-
-    head_pos++;
-    if (head_pos >= (u16)(_seg_len + leds_per_seg)) {
-        head_pos = 0;
+    } else if (++_seg_rt->aux_param3 >= frames) {
+        _seg_rt->aux_param3 = 0;
+        progress = 0;
+        _seg_rt->aux_param = (u8)((color_index + 1) % color_count);
         SET_CYCLE;
     }
-    _seg_rt->counter_mode_step = head_pos;
+    _seg_rt->counter_mode_step = progress;
 
-    return anim_frame_interval_ms();
+    return frame_ms;
+}
+
+/*
+    跑动内核（app 的「跑动」和内置的「跑动集合」共用）
+    ================================================================================
+    - 「点 + 间隔」为一组：一组 = 点宽个灯亮 + 同样多的底色灯
+      （点宽见 anim_run_group_len()：byte7 = 0 时按灯带长度自动分组，
+        本工程 6 灯 = 2 个灯一组，图案 ● ● ○ ○ ● ●）；
+    - 点的颜色从颜色池里循环取，而且每跑完一圈颜色偏移 +1（见 anim_run()）：
+          只有 1 种颜色 -> 单色点跑动（例如红色跑动）；
+          有多种颜色 -> 多个颜色的点同时跑，且颜色按颜色池依次流动
+                        （每跑完一圈换下一种颜色，贴近旧 multi_dot_running）；
+    - 每帧整条灯带按「点 + 间隔」的图案重画，并把图案整体沿方向前进若干个灯，
+      灯带很短（例如 6 个灯）时也能看清楚点在跑；
+    - 状态：图案相位放在 _seg_rt->counter_mode_step，颜色偏移放在 _seg_rt->aux_param；
+      「跑动集合」额外用 _seg_rt->aux_param 记住当前是第几个子动画。
+    ================================================================================
+*/
+typedef struct
+{
+    const u32 *colors; // 颜色池（0xRRGGBB）
+    u8 color_count;    // 颜色数量（至少 1）
+    u8 reverse;        // 方向：0 正向，1 反向
+    u16 dot_width;     // 点宽（一个点占多少个灯，至少 1）
+    u8 color_offset;   // 点的颜色偏移（每跑完一圈 +1，颜色就依次流动起来）
+} anim_run_cfg_t;
+
+/*
+    跑动的节奏（跑动 0x0C / 跑动集合 0x0D 共用）
+    ================================================================================
+    跑动是「图案沿灯带移动」，节奏不能只跟着 app 下发的帧间隔走，
+    否则速度开到最快（10ms 一帧）时，6 个灯上「点 + 间隔」一个周期只有 2 帧 = 20ms，
+    肉眼看就是常亮 / 闪：
+
+        - 「跑完整条灯带」的时长由速度百分比在
+          [ANIM_RUN_ROUND_SLOW_MS, ANIM_RUN_ROUND_FAST_MS] 之间插值；
+        - 帧间隔 = 这个时长 / 跑完整条灯带的帧数：
+              灯带短（本工程 6 灯）-> 每帧 1 个灯，帧间隔自然变大
+                                    （6 灯 + 最快 = 83ms/格，看得清在跑）；
+              灯带很长             -> 帧数受 ANIM_RUN_FRAME_MS_MIN(10ms) 限制，
+                                    这时每帧多走几个灯，跑的时长仍然不变。
+
+    调用者再把每帧步进夹到「一个点 + 间隔」以内（否则点会被整个跳过去）。
+    ================================================================================
+*/
+#define ANIM_RUN_ROUND_SLOW_MS 2000 // 速度 0%：跑完整条灯带要 2000ms
+#define ANIM_RUN_ROUND_FAST_MS 500  // 速度 100%：跑完整条灯带要 500ms
+#define ANIM_RUN_FRAME_MS_MIN  10   // 帧间隔下限（WS2812FX 一帧最快 10ms）
+
+typedef struct
+{
+    u16 step;     // 每帧推进多少个灯（图案相位步进）
+    u16 frame_ms; // 帧间隔（ms）
+} anim_run_timing_t;
+
+// 按「跑完整条灯带的时长」算出每帧步进和帧间隔（跟灯带长度自适应）
+static anim_run_timing_t anim_run_timing(void)
+{
+    u32 round_ms = // 跑完整条灯带的目标时长
+        anim_cycle_time_ms(ANIM_RUN_ROUND_SLOW_MS, ANIM_RUN_ROUND_FAST_MS);
+    u32 frames_max = // 跑完整条灯带最多多少帧（再快就超过帧间隔下限了）
+        round_ms / ANIM_RUN_FRAME_MS_MIN;
+    u16 step;                 // 每帧推进多少个灯
+    u16 frames;               // 跑完整条灯带的帧数
+    anim_run_timing_t timing; // 返回值
+
+    if (0 == frames_max) {
+        frames_max = 1;
+    }
+    step = (u16)((_seg_len + frames_max - 1) / frames_max);
+    if (step < 1) {
+        step = 1;
+    }
+    frames = (u16)((_seg_len + step - 1) / step);
+    if (frames < 1) {
+        frames = 1;
+    }
+    timing.step = step;
+    timing.frame_ms = (u16)(round_ms / frames);
+    if (timing.frame_ms < ANIM_RUN_FRAME_MS_MIN) {
+        timing.frame_ms = ANIM_RUN_FRAME_MS_MIN;
+    }
+
+    return timing;
+}
+
+// 按图案相位画一帧跑动图案；phase 是图案已经走过的灯珠数
+static void anim_run_draw(const anim_run_cfg_t *cfg, u16 phase)
+{
+    u16 dot_width = cfg->dot_width;    // 点宽（一个点占多少个灯）
+    u8 color_count = cfg->color_count; // 颜色数量（至少 1）
+    u16 unit;                          // 一个「点 + 间隔」的宽度（= 点宽 * 2）
+    u32 pattern_base; // 一个完整配色循环的宽度（= 点宽 * 2 * 颜色数量）
+    u32 background_color = anim_background_color(); // 底色
+    u16 led_pos;                                    // 逻辑灯位置
+    u32 color;                                      // 该灯这一帧的颜色
+    u32 pattern_index;                              // 图案走到该灯时的下标
+    u8 color_index; // 落在点上时用颜色池里的哪个颜色
+
+    if (0 == _seg_len) {
+        return;
+    }
+
+    if (0 == color_count) {
+        color_count = 1;
+    }
+
+    unit = anim_run_unit_len(dot_width);
+    pattern_base = (u32)color_count * unit;
+
+    for (led_pos = 0; led_pos < _seg_len; led_pos++) {
+        color = background_color;
+        /*
+            图案整体沿灯带前进 phase 个灯珠：
+            先用一个完整配色循环的长度把下标抬到正数，避免出现负数下标
+        */
+        pattern_index =
+            (u32)led_pos + pattern_base - (u32)(phase % pattern_base);
+
+        if ((pattern_index % unit) < dot_width) {
+            // 落在点上：第几个点（加上颜色偏移）决定用颜色池里的哪个颜色
+            color_index =
+                (u8)(((pattern_index / unit) + cfg->color_offset) % color_count);
+
+            color = cfg->colors[color_index];
+        }
+
+        WS2812FX_setPixelColor(anim_led_index_of_dir(led_pos, cfg->reverse),
+                               color);
+    }
+}
+
+/*
+    跑动（app 模式 0x0C）
+    ================================================================================
+    颜色池里的颜色形成「点」在底色上跑动：
+        1 种颜色 -> 单色跑动；
+        多种颜色 -> 多个颜色的点同时跑（红/绿/蓝跑动）。
+    一个「点 + 间隔」的周期跑完就算一轮（SET_CYCLE）。
+    节奏见上面「跑动的节奏」：帧间隔由速度换算，长短灯带都不会变成常亮 / 闪。
+    ================================================================================
+*/
+u16 led_strip_rgb_scene_anim_run(void)
+{
+    static u32 run_colors
+        [LED_STRIP_RGB_SCENE_COLOR_MAX]; // 本帧从颜色池拷出来的颜色（0x00RRGGBB）
+    anim_run_cfg_t cfg;                  // 给 anim_run_draw() 的跑动参数
+    anim_run_timing_t timing;            // 跑动节奏（每帧步进 / 帧间隔）
+    u8 color_index;                              // 拷贝颜色池时的下标
+    u16 unit;                                    // 一个「点 + 间隔」的宽度
+    u16 phase = (u16)_seg_rt->counter_mode_step; // 图案已经跑过的灯珠数
+    u8 color_count = anim_color_count();         // 颜色数量（至少 1）
+
+    for (color_index = 0; color_index < color_count; color_index++) {
+        run_colors[color_index] = anim_pick_color(color_index);
+    }
+
+    cfg.colors = run_colors;
+    cfg.color_count = color_count;
+    cfg.reverse = led_strip_rgb_scene_is_reverse();
+    cfg.dot_width = anim_run_group_len(); // 一组多少个灯（点宽）
+    // 点的颜色偏移：每跑完一圈 +1，颜色就依次流动起来（aux_param 存偏移）
+    cfg.color_offset = (u8)_seg_rt->aux_param;
+
+    if (0 == _seg_len) {
+        return anim_frame_interval_ms();
+    }
+
+    unit = anim_run_unit_len(cfg.dot_width);
+    timing = anim_run_timing();
+    if (timing.step > unit) {
+        // 一帧最多走一个「点 + 间隔」，否则点会被整个跳过去
+        timing.step = unit;
+    }
+    // 兜底：运行状态被外部改动过时先夹回一个周期内
+    if (phase >= unit) {
+        phase = 0;
+    }
+
+    anim_run_draw(&cfg, phase);
+
+    phase = (u16)(phase + timing.step);
+    if (phase >= unit) {
+        phase = (u16)(phase - unit);
+        // 跑完一圈：点的颜色前进一位（颜色按颜色池依次流动）
+        _seg_rt->aux_param = (u8)((cfg.color_offset + 1) % color_count);
+        SET_CYCLE;
+    }
+    _seg_rt->counter_mode_step = phase;
+
+    return timing.frame_ms;
+}
+
+/*
+    跑动集合（app 模式 0x0D）
+    ================================================================================
+    需求：单独跑一种动画，循环执行 —— 由下面 20 个「跑动」子动画组成，
+    每个子动画跑完一圈（图案沿灯带跑过整条灯带）就切到下一个，
+    20 个全部跑完再从第一个重新开始，一直循环。
+
+    子动画顺序：
+        红色跑动、绿色跑动、蓝色跑动、黄色跑动、紫色跑动、青色跑动、白色跑动、
+        红绿蓝跑动、紫青黄跑动、七彩跑动、
+        反向七彩跑动、反向紫青黄跑动、反向红绿蓝跑动、反向白色跑动、
+        反向青色跑动、反向紫色跑动、反向黄色跑动、反向蓝色跑动、
+        反向绿色跑动、反向红色跑动
+
+    配色和方向都写死在下表里（app 下发的「跑动集合」指令不带颜色），
+    速度/亮度仍然跟着 app 下发的动画参数走。
+    ================================================================================
+*/
+
+// 单色 / 组合色 调色板（0xRRGGBB）
+static const u32 anim_run_color_red[] = {0x00FF0000};
+static const u32 anim_run_color_green[] = {0x0000FF00};
+static const u32 anim_run_color_blue[] = {0x000000FF};
+static const u32 anim_run_color_yellow[] = {0x00FFFF00};
+static const u32 anim_run_color_purple[] = {0x00FF00FF};
+static const u32 anim_run_color_cyan[] = {0x0000FFFF};
+static const u32 anim_run_color_white[] = {0x00FFFFFF};
+static const u32 anim_run_color_rgb[] = {0x00FF0000, 0x0000FF00, 0x000000FF};
+static const u32 anim_run_color_pcy[] = {0x00FF00FF, 0x0000FFFF, 0x00FFFF00};
+static const u32 anim_run_color_rainbow[] = {
+    0x00FF0000, 0x0000FF00, 0x000000FF, 0x00FFFF00,
+    0x0000FFFF, 0x00FF00FF, 0x00FFFFFF,
+};
+
+#define ANIM_RUN_COLOR_NUM(color_array)                                        \
+    ((u8)(sizeof(color_array) / sizeof((color_array)[0])))
+
+typedef struct
+{
+    const u32 *colors; // 颜色池
+    u8 color_count;    // 颜色数量
+    u8 reverse;        // 方向：0 正向，1 反向
+} anim_run_collection_entry_t;
+
+static const anim_run_collection_entry_t anim_run_collection_table[] = {
+    {anim_run_color_red, ANIM_RUN_COLOR_NUM(anim_run_color_red), 0}, // 红色跑动
+    {anim_run_color_green, ANIM_RUN_COLOR_NUM(anim_run_color_green),
+     0}, // 绿色跑动
+    {anim_run_color_blue, ANIM_RUN_COLOR_NUM(anim_run_color_blue),
+     0}, // 蓝色跑动
+    {anim_run_color_yellow, ANIM_RUN_COLOR_NUM(anim_run_color_yellow),
+     0}, // 黄色跑动
+    {anim_run_color_purple, ANIM_RUN_COLOR_NUM(anim_run_color_purple),
+     0}, // 紫色跑动
+    {anim_run_color_cyan, ANIM_RUN_COLOR_NUM(anim_run_color_cyan),
+     0}, // 青色跑动
+    {anim_run_color_white, ANIM_RUN_COLOR_NUM(anim_run_color_white),
+     0}, // 白色跑动
+    {anim_run_color_rgb, ANIM_RUN_COLOR_NUM(anim_run_color_rgb),
+     0}, // 红绿蓝跑动
+    {anim_run_color_pcy, ANIM_RUN_COLOR_NUM(anim_run_color_pcy),
+     0}, // 紫青黄跑动
+    {anim_run_color_rainbow, ANIM_RUN_COLOR_NUM(anim_run_color_rainbow),
+     0}, // 七彩跑动
+    {anim_run_color_rainbow, ANIM_RUN_COLOR_NUM(anim_run_color_rainbow),
+     1}, // 反向七彩跑动
+    {anim_run_color_pcy, ANIM_RUN_COLOR_NUM(anim_run_color_pcy),
+     1}, // 反向紫青黄跑动
+    {anim_run_color_rgb, ANIM_RUN_COLOR_NUM(anim_run_color_rgb),
+     1}, // 反向红绿蓝跑动
+    {anim_run_color_white, ANIM_RUN_COLOR_NUM(anim_run_color_white),
+     1}, // 反向白色跑动
+    {anim_run_color_cyan, ANIM_RUN_COLOR_NUM(anim_run_color_cyan),
+     1}, // 反向青色跑动
+    {anim_run_color_purple, ANIM_RUN_COLOR_NUM(anim_run_color_purple),
+     1}, // 反向紫色跑动
+    {anim_run_color_yellow, ANIM_RUN_COLOR_NUM(anim_run_color_yellow),
+     1}, // 反向黄色跑动
+    {anim_run_color_blue, ANIM_RUN_COLOR_NUM(anim_run_color_blue),
+     1}, // 反向蓝色跑动
+    {anim_run_color_green, ANIM_RUN_COLOR_NUM(anim_run_color_green),
+     1}, // 反向绿色跑动
+    {anim_run_color_red, ANIM_RUN_COLOR_NUM(anim_run_color_red),
+     1}, // 反向红色跑动
+};
+
+#define ANIM_RUN_COLLECTION_NUM                                                \
+    (sizeof(anim_run_collection_table) / sizeof(anim_run_collection_table[0]))
+
+/*
+    跑动集合的点宽和跑动一致（一组 = 点宽个灯亮 + 同样多的底色灯，见 anim_run_group_len()），
+    每个子动画都是「底色的底 + 几组点在跑」，不会变成整条灯带一起亮、一起灭。
+*/
+
+u16 led_strip_rgb_scene_anim_run_collection(void)
+{
+    u8 sub_index = (u8)_seg_rt->aux_param;    // 当前跑第几个子动画
+    const anim_run_collection_entry_t *entry; // 该子动画的配色/方向表项
+    anim_run_cfg_t cfg;                       // 给 anim_run_draw() 的跑动参数
+    anim_run_timing_t timing;                 // 跑动节奏（每帧步进 / 帧间隔）
+    u16 unit;                                 // 一个「点 + 间隔」的宽度
+    u16 phase = (u16)_seg_rt->counter_mode_step; // 图案已经跑过的灯珠数
+
+    if (sub_index >= ANIM_RUN_COLLECTION_NUM) {
+        sub_index = 0;
+    }
+    entry = &anim_run_collection_table[sub_index];
+
+    cfg.colors = entry->colors;
+    cfg.color_count = entry->color_count;
+    cfg.reverse = entry->reverse;
+    cfg.dot_width = anim_run_group_len(); // 一组多少个灯（点宽，和跑动一致）
+    cfg.color_offset = 0; // 配色固定（跑完一圈就换下一个子动画，不需要颜色流动）
+
+    if (0 == _seg_len) {
+        return anim_frame_interval_ms();
+    }
+
+    unit = anim_run_unit_len(cfg.dot_width);
+    timing = anim_run_timing();
+    if (timing.step > unit) {
+        // 一帧最多走一个「点 + 间隔」，否则点会被整个跳过去
+        timing.step = unit;
+    }
+    // 兜底：运行状态被外部改动过时先夹回整条灯带内
+    if (phase >= _seg_len) {
+        phase = 0;
+    }
+
+    anim_run_draw(&cfg, phase);
+
+    phase = (u16)(phase + timing.step);
+    if (phase >= _seg_len) {
+        // 这个子动画跑完一圈（图案跑过整条灯带）：切到下一个子动画
+        phase = 0;
+        sub_index = (u8)((sub_index + 1) % ANIM_RUN_COLLECTION_NUM);
+        _seg_rt->aux_param = sub_index;
+        SET_CYCLE;
+    }
+    _seg_rt->counter_mode_step = phase;
+
+    return timing.frame_ms;
 }
 
 /* ------------------------------------------------------------------------------ */
@@ -1061,9 +1690,9 @@ u16 led_strip_rgb_scene_anim_run(void)
 		  同一帧内颜色是稳定的，所以看起来是「换色」而不是「闪」。
 	================================================================================
 */
-#define ANIM_SOUND_COLOR_NUM 3    // 随机调色板的颜色数量
-#define ANIM_SOUND_HUE_GAP 85     // 相邻颜色在色环上的最小间隔（0 ~ 255）
-#define ANIM_SOUND_HUE_EXTRA 171  // 在最小间隔之上再随机的范围（256 - HUE_GAP）
+#define ANIM_SOUND_COLOR_NUM 3   // 随机调色板的颜色数量
+#define ANIM_SOUND_HUE_GAP   85  // 相邻颜色在色环上的最小间隔（0 ~ 255）
+#define ANIM_SOUND_HUE_EXTRA 171 // 在最小间隔之上再随机的范围（256 - HUE_GAP）
 
 // 有声音 / 没有声音时，多少帧重新随机一次调色板
 #define ANIM_SOUND_PALETTE_FAST_FRAMES 20
@@ -1075,8 +1704,8 @@ static u8 anim_sound_palette_frames; // 当前调色板已经用了多少帧
 // 重新随机一张调色板
 static void anim_sound_palette_refresh(void)
 {
-    u8 hue = WS2812FX_random8();
-    u8 color_index;
+    u8 hue = WS2812FX_random8(); // 色环上的起始色相
+    u8 color_index;              // 调色板里第几个颜色
 
     for (color_index = 0; color_index < ANIM_SOUND_COLOR_NUM; color_index++) {
         anim_sound_palette[color_index] = WS2812FX_color_wheel(hue);
@@ -1110,8 +1739,10 @@ static u32 anim_sound_off_color(void)
 */
 static void anim_sound_palette_tick(u8 triggered)
 {
-    u8 refresh_frames = triggered ? (u8)ANIM_SOUND_PALETTE_FAST_FRAMES
-                                  : (u8)ANIM_SOUND_PALETTE_SLOW_FRAMES;
+    u8 refresh_frames =
+        triggered
+            ? (u8)ANIM_SOUND_PALETTE_FAST_FRAMES
+            : (u8)ANIM_SOUND_PALETTE_SLOW_FRAMES; // 多少帧重新随机一次调色板
 
     if (++anim_sound_palette_frames >= refresh_frames) {
         anim_sound_palette_frames = 0;
@@ -1156,13 +1787,16 @@ static u8 anim_sound_level_255(void)
 */
 u16 led_strip_rgb_scene_anim_sound_energy(void)
 {
-    u8 leds_per_seg = anim_leds_per_seg();
-    u16 energy = (u16)_seg_rt->counter_mode_step; // 当前能量 0 ~ 255
-    u16 target = (u16)anim_sound_level_255();
-    u32 total;      // 能量总量（一个灯满亮算 255 份）
-    u16 full_leds;  // 满亮的灯数
-    u16 part_level; // 边界那个灯的亮度
-    u16 led_pos;
+    u8 leds_per_seg = anim_leds_per_seg(); // 每段多少个灯（能量条按段取色）
+    u16 energy =
+        (u16)_seg_rt->counter_mode_step;      // 当前能量 0 ~ 255（快起慢落）
+    u16 target = (u16)anim_sound_level_255(); // 声音强度对应的目标能量 0 ~ 255
+    u32 total;                                // 能量总量（一个灯满亮算 255 份）
+    u16 full_leds;                            // 满亮的灯数
+    u16 part_level;                           // 能量条边界那个灯的亮度
+    u16 led_pos;    // 逻辑灯位置（0 = 控制板接灯带那一端）
+    u8 color_index; // 该灯用的颜色下标（按段取色）
+    u8 led_level;   // 该灯这一帧的亮度
 
     // 兜底：运行状态被外部改动过时先夹回合法范围
     if (energy > 255) {
@@ -1187,8 +1821,7 @@ u16 led_strip_rgb_scene_anim_sound_energy(void)
     }
 
     for (led_pos = 0; led_pos < _seg_len; led_pos++) {
-        u8 color_index = (u8)(led_pos / leds_per_seg);
-        u8 led_level;
+        color_index = (u8)(led_pos / leds_per_seg);
 
         if (led_pos < full_leds) {
             led_level = 255; // 满亮
@@ -1228,28 +1861,32 @@ u16 led_strip_rgb_scene_anim_sound_energy(void)
 	过去用的帧数变多（更慢）；MIN_FRAMES 调大 = 拍子之间拉得更开。
 	================================================================================
 */
-#define ANIM_SOUND_RHYTHM_FRAME_MS 40    // 节奏自己的帧间隔（ms），越大越慢
-#define ANIM_SOUND_RHYTHM_SPAN 8         // 整条灯带分几帧打完（越大越慢）
-#define ANIM_SOUND_RHYTHM_MIN_FRAMES 6   // 两拍之间至少隔几帧
+#define ANIM_SOUND_RHYTHM_FRAME_MS    40 // 节奏自己的帧间隔（ms），越大越慢
+#define ANIM_SOUND_RHYTHM_SPAN        8  // 整条灯带分几帧打完（越大越慢）
+#define ANIM_SOUND_RHYTHM_MIN_FRAMES  6  // 两拍之间至少隔几帧
 #define ANIM_SOUND_RHYTHM_IDLE_FRAMES 15 // 没有声音时的自动起拍间隔（帧）
 
 u16 led_strip_rgb_scene_anim_sound_rhythm(void)
 {
-    u8 color_count = anim_sound_color_count();
-    u8 color_index = (u8)_seg_rt->aux_param;
-    u16 trail_len = (_seg_len > 1) ? (u16)(_seg_len / 2) : 1;
+    u8 color_count = anim_sound_color_count(); // 随机调色板的颜色数量
+    u8 color_index = (u8)_seg_rt->aux_param;   // 当前这一拍用的颜色下标
+    u16 trail_len = (_seg_len > 1) ? (u16)(_seg_len / 2)
+                                   : 1; // 拖尾长度（灯带一半，至少 1）
     /*
 		每帧往前推进多少：按灯带长度自适应（长灯带一帧多走几个灯，
 		短灯带一帧就走 1 个灯，动作看得清楚、不会一闪而过）
 	*/
     u16 step = (_seg_len >= ANIM_SOUND_RHYTHM_SPAN)
                    ? (u16)(_seg_len / ANIM_SOUND_RHYTHM_SPAN)
-                   : 1;
-    u16 wave_end;
+                   : 1; // 每帧往前推进的灯数
+    u16 wave_end;       // 这一拍要打到的终点（灯带长度 + 拖尾长度）
     u16 wave_pos = (u16)_seg_rt->counter_mode_step; // 这一拍已经打到第几个灯
     u8 since_beat = (u8)_seg_rt->aux_param3;        // 距离上一次起拍过了几帧
-    u8 triggered;
-    u16 led_pos;
+    u8 triggered;                                   // 这一帧有没有检测到声音
+    u16 led_pos;  // 逻辑灯位置（0 = 控制板接灯带那一端）
+    u32 color;    // 该灯这一帧的颜色
+    u16 distance; // 该灯离「拍到的地方」多远
+    u8 level;     // 该灯的亮度（头部最亮，往后渐暗）
 
     if (0 == trail_len) {
         trail_len = 1;
@@ -1286,17 +1923,17 @@ u16 led_strip_rgb_scene_anim_sound_rhythm(void)
     }
 
     for (led_pos = 0; led_pos < _seg_len; led_pos++) {
-        u32 color = anim_sound_off_color();
+        color = anim_sound_off_color();
 
         if (led_pos <= wave_pos) {
-            u16 distance = (u16)(wave_pos - led_pos); // 离「拍到的地方」多远
+            distance = (u16)(wave_pos - led_pos); // 离「拍到的地方」多远
 
             if (distance < trail_len) {
                 // 头部最亮，越往后越暗
-                u8 level = (u8)(255 - ((u32)distance * 255) / trail_len);
-                color = WS2812FX_color_blend(anim_sound_off_color(),
-                                             anim_sound_color(color_index),
-                                             level);
+                level = (u8)(255 - ((u32)distance * 255) / trail_len);
+                color =
+                    WS2812FX_color_blend(anim_sound_off_color(),
+                                         anim_sound_color(color_index), level);
             }
         }
         WS2812FX_setPixelColor(anim_led_index_of(led_pos), color);
@@ -1324,30 +1961,35 @@ u16 led_strip_rgb_scene_anim_sound_rhythm(void)
 	- 颜色按「段」取色（多少个灯为一组），和其它效果保持一致。
 	================================================================================
 */
-#define ANIM_SOUND_SPECTRUM_BANDS 8 // 频段数量
-#define ANIM_SOUND_SPECTRUM_DECAY 6 // 每帧下降的柱高
-#define ANIM_SOUND_SPECTRUM_IDLE 12 // 没有声音时保留的底噪亮度
+#define ANIM_SOUND_SPECTRUM_BANDS 8  // 频段数量
+#define ANIM_SOUND_SPECTRUM_DECAY 6  // 每帧下降的柱高
+#define ANIM_SOUND_SPECTRUM_IDLE  12 // 没有声音时保留的底噪亮度
 
 static u8 anim_spectrum_level[ANIM_SOUND_SPECTRUM_BANDS];
 
 u16 led_strip_rgb_scene_anim_sound_spectrum(void)
 {
-    u8 leds_per_seg = anim_leds_per_seg();
-    u8 base = anim_sound_level_255();
-    u8 band;
-    u16 led_pos;
-    u8 triggered;
+    u8 leds_per_seg = anim_leds_per_seg(); // 每段多少个灯（柱子按段取色）
+    u8 base = anim_sound_level_255(); // 这一次声音强度对应的 0 ~ 255 基准高度
+    u8 band;                          // 当前处理第几个频段
+    u16 led_pos;                      // 逻辑灯位置（0 = 控制板接灯带那一端）
+    u8 triggered;                     // 这一帧有没有检测到声音
+    u8 half;        // 基准高度的一半（柱子取 [half, base] 之间的随机高度）
+    u8 level;       // 这次给频段取到的高度 0 ~ 255
+    u8 band_index;  // 该灯属于第几个频段
+    u8 color_index; // 该灯用的颜色下标（按段取色）
+    u8 led_level;   // 该灯最终的亮度（柱高）
 
     triggered = get_sound_triggered_by_led_strip_rgb();
     anim_sound_palette_tick(triggered);
 
     // 有声音：各个频段重新取高度（以声音强度为基准上下浮动）
     if (triggered) {
-        u8 half = (u8)(base / 2);
+        half = (u8)(base / 2);
 
         for (band = 0; band < ANIM_SOUND_SPECTRUM_BANDS; band++) {
             // [base/2, base] 之间随机：柱子有高有低
-            u8 level = (u8)(half + WS2812FX_random8_lim((u8)(half + 1)));
+            level = (u8)(half + WS2812FX_random8_lim((u8)(half + 1)));
 
             if (level > anim_spectrum_level[band]) {
                 anim_spectrum_level[band] = level;
@@ -1365,9 +2007,9 @@ u16 led_strip_rgb_scene_anim_sound_spectrum(void)
     }
 
     for (led_pos = 0; led_pos < _seg_len; led_pos++) {
-        u8 band_index = (u8)(led_pos % ANIM_SOUND_SPECTRUM_BANDS);
-        u8 color_index = (u8)(led_pos / leds_per_seg);
-        u8 led_level = anim_spectrum_level[band_index];
+        band_index = (u8)(led_pos % ANIM_SOUND_SPECTRUM_BANDS);
+        color_index = (u8)(led_pos / leds_per_seg);
+        led_level = anim_spectrum_level[band_index];
 
         if (led_level < ANIM_SOUND_SPECTRUM_IDLE) {
             led_level = ANIM_SOUND_SPECTRUM_IDLE; // 底噪
@@ -1396,24 +2038,26 @@ u16 led_strip_rgb_scene_anim_sound_spectrum(void)
 	- 滚完「颜色数量 * 块大小」格算一轮；滚动方向由场景的方向决定。
 	================================================================================
 */
-#define ANIM_SOUND_SCROLL_SLOW_MS 120     // 没有声音：每 120ms 滚一格
-#define ANIM_SOUND_SCROLL_FAST_MS 30      // 有声音：每 30ms 滚一格
-#define ANIM_SOUND_SCROLL_BOOST_FRAMES 12 // 一次「一拍」最多加速这么多帧
+#define ANIM_SOUND_SCROLL_SLOW_MS      120 // 没有声音：每 120ms 滚一格
+#define ANIM_SOUND_SCROLL_FAST_MS      30  // 有声音：每 30ms 滚一格
+#define ANIM_SOUND_SCROLL_BOOST_FRAMES 12  // 一次「一拍」最多加速这么多帧
 
 u16 led_strip_rgb_scene_anim_sound_scroll(void)
 {
-    u8 color_count = anim_sound_color_count();
-    u16 block_len = anim_leds_per_seg();
-    u16 cycle_len;
+    u8 color_count = anim_sound_color_count(); // 随机调色板的颜色数量
+    u16 block_len = anim_leds_per_seg();       // 颜色块大小（多少个灯一块）
+    u16 cycle_len; // 滚一轮共多少格（颜色数量 * 块大小）
     u16 flow = (u16)_seg_rt->counter_mode_step; // 已经滚了多少格
-    u8 boost = (u8)_seg_rt->aux_param;          // 还剩几帧加速
-    u32 scroll;
-    u16 led_pos;
-    u8 triggered;
+    u8 boost = (u8)_seg_rt->aux_param;          // 还剩几帧加速滚动
+    u32 scroll;      // 这一帧实际的滚动量（反向时取反）
+    u16 led_pos;     // 逻辑灯位置（0 = 控制板接灯带那一端）
+    u8 triggered;    // 这一帧有没有检测到声音
+    u16 auto_len;    // 一组只有 1 个灯时，按颜色数量自动分块
+    u16 block_index; // 该灯落在第几个颜色块上
 
     // 一组只有 1 个灯时，按颜色数量均分，免得每个灯都在闪
     if (block_len < 2) {
-        u16 auto_len = (u16)(_seg_len / color_count); // 每种颜色分到几个灯
+        auto_len = (u16)(_seg_len / color_count); // 每种颜色分到几个灯
 
         if (auto_len > block_len) {
             block_len = auto_len;
@@ -1442,12 +2086,12 @@ u16 led_strip_rgb_scene_anim_sound_scroll(void)
     }
 
     // 反向：把滚动量反过来，色块就是朝另一个方向滚
-    scroll = led_strip_rgb_scene_is_reverse() ? (u32)(cycle_len - flow)
-                                              : (u32)flow;
+    scroll =
+        led_strip_rgb_scene_is_reverse() ? (u32)(cycle_len - flow) : (u32)flow;
 
     for (led_pos = 0; led_pos < _seg_len; led_pos++) {
         // 颜色块沿着灯带滚动：块序号 = (灯珠位置 + 滚动量) / 块大小
-        u16 block_index = (u16)(((u32)led_pos + scroll) / block_len);
+        block_index = (u16)(((u32)led_pos + scroll) / block_len);
 
         WS2812FX_setPixelColor(anim_led_index_of(led_pos),
                                anim_sound_color(block_index));
@@ -1468,7 +2112,8 @@ u16 led_strip_rgb_scene_anim_sound_scroll(void)
 // 关灯动画：渐灭后熄灭
 u16 led_strip_rgb_scene_anim_power_off(void)
 {
-    u16 fade_frames = (u16)_seg_rt->counter_mode_step;
+    u16 fade_frames =
+        (u16)_seg_rt->counter_mode_step; // 已经渐灭了多少帧（最多 50 帧）
 
     WS2812FX_fade_out();
 
