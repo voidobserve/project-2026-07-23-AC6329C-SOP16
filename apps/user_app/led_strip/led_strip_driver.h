@@ -5,7 +5,8 @@
 // #include "board_ac632n_demo_cfg.h" 
 
 // RGB 幻彩灯珠的长度，单位：颗灯珠
-#define LED_STRIP_RGB_NUMS 6
+// #define LED_STRIP_RGB_NUMS ((u16)14 * 30)
+#define LED_STRIP_RGB_NUMS ((u16)80)
 // 纯白色灯珠的长度，单位：颗灯珠
 #define LED_STRIP_WHITE_NUMS 12
 

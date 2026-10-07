@@ -31,7 +31,7 @@ void led_strip_rgb_schedule_init(void)
     fc_effect.rgb.g = 0;
     fc_effect.rgb.b = 0;
 
-    fc_effect.sequence = NEO_RGB;
+    fc_effect.sequence = NEO_GRB;
     fc_effect.b = 255;
     fc_effect.app_b = 100; // 反馈给app的亮度，单位：百分比
 
